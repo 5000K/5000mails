@@ -41,12 +41,29 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 		if len(sender.calls) != 1 {
 			t.Fatalf("expected 1 send call, got %d", len(sender.calls))
 		}
-		if len(sender.calls[0].recipients) != 1 || sender.calls[0].recipients[0].Email != "alice@example.com" {
-			t.Errorf("unexpected recipients: %+v", sender.calls[0].recipients)
+		if sender.calls[0].recipient.Email != "alice@example.com" {
+			t.Errorf("unexpected recipient: %+v", sender.calls[0].recipient)
 		}
 	})
 
-	t.Run("returns error when list not found", func(t *testing.T) {
+	t.Run("passes Recipient in render data", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: metadata, body: "click here"}
+		svc := newSubscriptionSvc(newFakeListRepo(list), newFakeUserRepo(), newFakeConfirmationRepo(), renderer, &fakeSender{})
+
+		user, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, ok := renderer.lastData["Recipient"]
+		if !ok {
+			t.Fatal("expected Recipient key in render data")
+		}
+		if u, ok := got.(domain.User); !ok || u.Email != user.Email {
+			t.Errorf("unexpected Recipient in render data: %+v", got)
+		}
+	})
+
+	t.Run("returns error when GetListByName fails", func(t *testing.T) {
 		repo := newFakeListRepo()
 		repo.getByNameErr = errors.New("list missing")
 		svc := newSubscriptionSvc(repo, newFakeUserRepo(), newFakeConfirmationRepo(), &fakeRenderer{}, &fakeSender{})

@@ -62,14 +62,14 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 	}
 
 	metadata, body, err := s.renderer.Render(&s.confirmMail, map[string]any{
-		"token": token,
-		"user":  *user,
+		"token":     token,
+		"Recipient": *user,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering confirmation mail: %w", err)
 	}
 
-	if err := s.sender.SendMail(ctx, metadata, body, []domain.User{*user}); err != nil {
+	if err := s.sender.SendMail(ctx, metadata, body, *user); err != nil {
 		return nil, fmt.Errorf("sending confirmation mail to %q: %w", email, err)
 	}
 

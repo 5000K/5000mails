@@ -25,10 +25,10 @@ type ConfirmationRepository interface {
 	DeleteConfirmation(ctx context.Context, id uint) error
 }
 
-type Sender interface {
-	SendMail(ctx context.Context, metadata MailMetadata, body string, recipients []User) error
-}
-
 type Renderer interface {
 	Render(raw *string, data map[string]any) (metadata MailMetadata, body string, err error)
+}
+
+type Sender interface {
+	SendMail(ctx context.Context, metadata MailMetadata, body string, recipient User) error
 }

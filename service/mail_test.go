@@ -45,18 +45,38 @@ func TestMailService_SendToList(t *testing.T) {
 		if err := svc.SendToList(context.Background(), "weekly", "# Hi", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(sender.calls) != 1 {
-			t.Fatalf("expected 1 send call, got %d", len(sender.calls))
+		if len(sender.calls) != 2 {
+			t.Fatalf("expected 2 send calls, got %d", len(sender.calls))
 		}
-		call := sender.calls[0]
-		if len(call.recipients) != 2 {
-			t.Errorf("expected 2 recipients, got %d", len(call.recipients))
+		emails := map[string]bool{}
+		for _, call := range sender.calls {
+			emails[call.recipient.Email] = true
+			if call.body != "rendered" {
+				t.Errorf("expected body %q, got %q", "rendered", call.body)
+			}
+			if call.metadata != metadata {
+				t.Errorf("expected metadata %+v, got %+v", metadata, call.metadata)
+			}
 		}
-		if call.body != "rendered" {
-			t.Errorf("expected body %q, got %q", "rendered", call.body)
+		if !emails["alice@example.com"] || !emails["bob@example.com"] {
+			t.Errorf("expected both recipients to receive mail, got: %v", emails)
 		}
-		if call.metadata != metadata {
-			t.Errorf("expected metadata %+v, got %+v", metadata, call.metadata)
+	})
+
+	t.Run("injects Recipient into render data per recipient", func(t *testing.T) {
+		user := confirmedUser(1, 5, "alice@example.com")
+		renderer := &fakeRenderer{metadata: metadata, body: "body"}
+		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), renderer, &fakeSender{})
+
+		if err := svc.SendToList(context.Background(), "weekly", "raw", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, ok := renderer.lastData["Recipient"]
+		if !ok {
+			t.Fatal("expected Recipient key in render data")
+		}
+		if u, ok := got.(domain.User); !ok || u.Email != user.Email {
+			t.Errorf("unexpected Recipient in render data: %+v", got)
 		}
 	})
 
@@ -124,11 +144,27 @@ func TestMailService_SendTestMail(t *testing.T) {
 			t.Fatalf("expected 1 send call, got %d", len(sender.calls))
 		}
 		call := sender.calls[0]
-		if len(call.recipients) != 1 || call.recipients[0].Email != recipient.Email {
-			t.Errorf("unexpected recipients: %+v", call.recipients)
+		if call.recipient.Email != recipient.Email {
+			t.Errorf("unexpected recipient: %+v", call.recipient)
 		}
 		if call.body != "preview" {
 			t.Errorf("expected body %q, got %q", "preview", call.body)
+		}
+	})
+
+	t.Run("injects Recipient into render data", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: metadata, body: "body"}
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), renderer, &fakeSender{})
+
+		if err := svc.SendTestMail(context.Background(), recipient, "# Draft", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, ok := renderer.lastData["Recipient"]
+		if !ok {
+			t.Fatal("expected Recipient key in render data")
+		}
+		if u, ok := got.(domain.User); !ok || u.Email != recipient.Email {
+			t.Errorf("unexpected Recipient in render data: %+v", got)
 		}
 	})
 

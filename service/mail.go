@@ -44,13 +44,21 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 		return nil
 	}
 
-	metadata, body, err := s.renderer.Render(&raw, data)
-	if err != nil {
-		return fmt.Errorf("rendering mail for list %q: %w", listName, err)
-	}
+	for _, recipient := range recipients {
+		recipientData := make(map[string]any, len(data)+1)
+		for k, v := range data {
+			recipientData[k] = v
+		}
+		recipientData["Recipient"] = recipient
 
-	if err := s.sender.SendMail(ctx, metadata, body, recipients); err != nil {
-		return fmt.Errorf("sending mail to list %q: %w", listName, err)
+		metadata, body, err := s.renderer.Render(&raw, recipientData)
+		if err != nil {
+			return fmt.Errorf("rendering mail for %q: %w", recipient.Email, err)
+		}
+
+		if err := s.sender.SendMail(ctx, metadata, body, recipient); err != nil {
+			return fmt.Errorf("sending mail to %q: %w", recipient.Email, err)
+		}
 	}
 
 	return nil
@@ -61,12 +69,18 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 // making this suitable for previewing a newsletter before a real dispatch.
 // data is passed through to the renderer as template variables.
 func (s *MailService) SendTestMail(ctx context.Context, recipient domain.User, raw string, data map[string]any) error {
-	metadata, body, err := s.renderer.Render(&raw, data)
+	recipientData := make(map[string]any, len(data)+1)
+	for k, v := range data {
+		recipientData[k] = v
+	}
+	recipientData["Recipient"] = recipient
+
+	metadata, body, err := s.renderer.Render(&raw, recipientData)
 	if err != nil {
 		return fmt.Errorf("rendering test mail for %q: %w", recipient.Email, err)
 	}
 
-	if err := s.sender.SendMail(ctx, metadata, body, []domain.User{recipient}); err != nil {
+	if err := s.sender.SendMail(ctx, metadata, body, recipient); err != nil {
 		return fmt.Errorf("sending test mail to %q: %w", recipient.Email, err)
 	}
 

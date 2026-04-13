@@ -244,26 +244,28 @@ type fakeSender struct {
 }
 
 type sendCall struct {
-	metadata   domain.MailMetadata
-	body       string
-	recipients []domain.User
+	metadata  domain.MailMetadata
+	body      string
+	recipient domain.User
 }
 
-func (s *fakeSender) SendMail(_ context.Context, metadata domain.MailMetadata, body string, recipients []domain.User) error {
+func (s *fakeSender) SendMail(_ context.Context, metadata domain.MailMetadata, body string, recipient domain.User) error {
 	if s.err != nil {
 		return s.err
 	}
-	s.calls = append(s.calls, sendCall{metadata: metadata, body: body, recipients: recipients})
+	s.calls = append(s.calls, sendCall{metadata: metadata, body: body, recipient: recipient})
 	return nil
 }
 
 // fakeRenderer returns configurable metadata / body.
 type fakeRenderer struct {
-	metadata domain.MailMetadata
-	body     string
-	err      error
+	metadata     domain.MailMetadata
+	body         string
+	err          error
+	lastData     map[string]any
 }
 
-func (r *fakeRenderer) Render(_ *string, _ map[string]any) (domain.MailMetadata, string, error) {
+func (r *fakeRenderer) Render(_ *string, data map[string]any) (domain.MailMetadata, string, error) {
+	r.lastData = data
 	return r.metadata, r.body, r.err
 }
