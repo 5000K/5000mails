@@ -170,12 +170,12 @@ func TestSubscriptionService_Confirm(t *testing.T) {
 }
 
 func TestSubscriptionService_Unsubscribe(t *testing.T) {
-	u := &domain.User{ID: 1, Email: "alice@example.com", MailingListID: 1}
+	u := &domain.User{ID: 1, Email: "alice@example.com", MailingListID: 1, UnsubscribeToken: "tok-alice"}
 
-	t.Run("removes user by email", func(t *testing.T) {
+	t.Run("removes user by unsubscribe token", func(t *testing.T) {
 		users := newFakeUserRepo(u)
 		svc := newSubscriptionSvc(newFakeListRepo(), users, newFakeConfirmationRepo(), &fakeRenderer{}, &fakeSender{})
-		if err := svc.Unsubscribe(context.Background(), "alice@example.com"); err != nil {
+		if err := svc.Unsubscribe(context.Background(), "tok-alice"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if _, exists := users.users[1]; exists {
@@ -183,12 +183,12 @@ func TestSubscriptionService_Unsubscribe(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error when user not found", func(t *testing.T) {
+	t.Run("returns error when token not found", func(t *testing.T) {
 		users := newFakeUserRepo()
-		users.getByEmailErr = errors.New("not found")
+		users.getByUnsubscribeTokenErr = errors.New("not found")
 		svc := newSubscriptionSvc(newFakeListRepo(), users, newFakeConfirmationRepo(), &fakeRenderer{}, &fakeSender{})
-		err := svc.Unsubscribe(context.Background(), "ghost@example.com")
-		if !errors.Is(err, users.getByEmailErr) {
+		err := svc.Unsubscribe(context.Background(), "bad-token")
+		if !errors.Is(err, users.getByUnsubscribeTokenErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
 		}
 	})
@@ -197,7 +197,7 @@ func TestSubscriptionService_Unsubscribe(t *testing.T) {
 		users := newFakeUserRepo(u)
 		users.removeErr = errors.New("delete failed")
 		svc := newSubscriptionSvc(newFakeListRepo(), users, newFakeConfirmationRepo(), &fakeRenderer{}, &fakeSender{})
-		err := svc.Unsubscribe(context.Background(), "alice@example.com")
+		err := svc.Unsubscribe(context.Background(), "tok-alice")
 		if !errors.Is(err, users.removeErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
 		}

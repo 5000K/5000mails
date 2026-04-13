@@ -9,11 +9,12 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-func (r *MailingListRepository) AddUser(ctx context.Context, mailingListID uint, name, email string) (*domain.User, error) {
+func (r *MailingListRepository) AddUser(ctx context.Context, mailingListID uint, name, email, unsubscribeToken string) (*domain.User, error) {
 	user := &User{
-		Name:          name,
-		Email:         email,
-		MailingListID: mailingListID,
+		Name:             name,
+		Email:            email,
+		MailingListID:    mailingListID,
+		UnsubscribeToken: unsubscribeToken,
 	}
 
 	result := r.db.WithContext(ctx).Create(user)
@@ -64,16 +65,15 @@ func (r *MailingListRepository) ConfirmUser(ctx context.Context, userID uint) er
 	return nil
 }
 
-func (r *MailingListRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+func (r *MailingListRepository) GetUserByUnsubscribeToken(ctx context.Context, token string) (*domain.User, error) {
 	var user User
 
-	result := r.db.WithContext(ctx).Where("email = ?", email).First(&user)
+	result := r.db.WithContext(ctx).Where("unsubscribe_token = ?", token).First(&user)
 	if result.Error != nil {
-		r.logger.ErrorContext(ctx, "failed to get user by email",
-			slog.String("email", email),
+		r.logger.ErrorContext(ctx, "failed to get user by unsubscribe token",
 			slog.Any("error", result.Error),
 		)
-		return nil, fmt.Errorf("get user by email: %w", result.Error)
+		return nil, fmt.Errorf("get user by unsubscribe token: %w", result.Error)
 	}
 
 	return ToDomainUser(&user), nil

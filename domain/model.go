@@ -10,11 +10,12 @@ type MailingList struct {
 
 // User represents a subscriber on a mailing list.
 type User struct {
-	ID            uint
-	Name          string
-	Email         string
-	ConfirmedAt   *time.Time
-	MailingListID uint
+	ID               uint
+	Name             string
+	Email            string
+	ConfirmedAt      *time.Time
+	MailingListID    uint
+	UnsubscribeToken string
 }
 
 // IsConfirmed returns true if the user has completed double opt-in.

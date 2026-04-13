@@ -92,12 +92,12 @@ type fakeUserRepo struct {
 	users  map[uint]*domain.User
 	nextID uint
 
-	addErr          error
-	confirmErr      error
-	getByEmailErr   error
-	getUsersErr     error
-	getConfirmedErr error
-	removeErr       error
+	addErr                   error
+	confirmErr               error
+	getByUnsubscribeTokenErr error
+	getUsersErr              error
+	getConfirmedErr          error
+	removeErr                error
 }
 
 func newFakeUserRepo(seed ...*domain.User) *fakeUserRepo {
@@ -111,11 +111,11 @@ func newFakeUserRepo(seed ...*domain.User) *fakeUserRepo {
 	return r
 }
 
-func (r *fakeUserRepo) AddUser(_ context.Context, mailingListID uint, name, email string) (*domain.User, error) {
+func (r *fakeUserRepo) AddUser(_ context.Context, mailingListID uint, name, email, unsubscribeToken string) (*domain.User, error) {
 	if r.addErr != nil {
 		return nil, r.addErr
 	}
-	u := &domain.User{ID: r.nextID, Name: name, Email: email, MailingListID: mailingListID}
+	u := &domain.User{ID: r.nextID, Name: name, Email: email, MailingListID: mailingListID, UnsubscribeToken: unsubscribeToken}
 	r.nextID++
 	r.users[u.ID] = u
 	return u, nil
@@ -134,16 +134,16 @@ func (r *fakeUserRepo) ConfirmUser(_ context.Context, userID uint) error {
 	return nil
 }
 
-func (r *fakeUserRepo) GetUserByEmail(_ context.Context, email string) (*domain.User, error) {
-	if r.getByEmailErr != nil {
-		return nil, r.getByEmailErr
+func (r *fakeUserRepo) GetUserByUnsubscribeToken(_ context.Context, token string) (*domain.User, error) {
+	if r.getByUnsubscribeTokenErr != nil {
+		return nil, r.getByUnsubscribeTokenErr
 	}
 	for _, u := range r.users {
-		if u.Email == email {
+		if u.UnsubscribeToken == token {
 			return u, nil
 		}
 	}
-	return nil, fmt.Errorf("user %q not found", email)
+	return nil, fmt.Errorf("user with unsubscribe token %q not found", token)
 }
 
 func (r *fakeUserRepo) GetUsers(_ context.Context, mailingListID uint) ([]domain.User, error) {

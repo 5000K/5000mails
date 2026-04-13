@@ -15,28 +15,31 @@ type MailingList struct {
 
 type User struct {
 	gorm.Model
-	Name          string     `gorm:"not null"`
-	Email         string     `gorm:"not null;uniqueIndex"`
-	ConfirmedAt   *time.Time // nil = unconfirmed, non-nil = confirmed
-	MailingListID uint       `gorm:"not null"`
+	Name             string `gorm:"not null"`
+	Email            string `gorm:"not null;uniqueIndex:idx_user_email_list"`
+	ConfirmedAt      *time.Time
+	MailingListID    uint   `gorm:"not null;uniqueIndex:idx_user_email_list"`
+	UnsubscribeToken string `gorm:"not null;uniqueIndex"`
 }
 
 func ToGORMUser(u *domain.User) *User {
 	return &User{
-		Name:          u.Name,
-		Email:         u.Email,
-		ConfirmedAt:   u.ConfirmedAt,
-		MailingListID: u.MailingListID,
+		Name:             u.Name,
+		Email:            u.Email,
+		ConfirmedAt:      u.ConfirmedAt,
+		MailingListID:    u.MailingListID,
+		UnsubscribeToken: u.UnsubscribeToken,
 	}
 }
 
 func ToDomainUser(u *User) *domain.User {
 	return &domain.User{
-		ID:            u.ID,
-		Name:          u.Name,
-		Email:         u.Email,
-		ConfirmedAt:   u.ConfirmedAt,
-		MailingListID: u.MailingListID,
+		ID:               u.ID,
+		Name:             u.Name,
+		Email:            u.Email,
+		ConfirmedAt:      u.ConfirmedAt,
+		MailingListID:    u.MailingListID,
+		UnsubscribeToken: u.UnsubscribeToken,
 	}
 }
 

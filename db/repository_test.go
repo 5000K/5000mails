@@ -108,7 +108,7 @@ func TestAddUser(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
 
-	user, err := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
+	user, err := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,29 +121,32 @@ func TestAddUser(t *testing.T) {
 	if user.ConfirmedAt != nil {
 		t.Error("new user should be unconfirmed")
 	}
+	if user.UnsubscribeToken != "tok-alice" {
+		t.Errorf("expected unsubscribe token %q, got %q", "tok-alice", user.UnsubscribeToken)
+	}
 }
 
 func TestAddUser_DuplicateEmailErrors(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
-	repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
+	repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
 
-	_, err := repo.AddUser(context.Background(), listID, "Alice2", "alice@example.com")
+	_, err := repo.AddUser(context.Background(), listID, "Alice2", "alice@example.com", "tok-alice-2")
 	if err == nil {
-		t.Fatal("expected error for duplicate email, got nil")
+		t.Fatal("expected error for duplicate email on same list, got nil")
 	}
 }
 
 func TestConfirmUser(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
+	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
 
 	if err := repo.ConfirmUser(context.Background(), user.ID); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	got, _ := repo.GetUserByEmail(context.Background(), "alice@example.com")
+	got, _ := repo.GetUserByUnsubscribeToken(context.Background(), "tok-alice")
 	if got.ConfirmedAt == nil {
 		t.Error("expected ConfirmedAt to be set after confirmation")
 	}
@@ -152,7 +155,7 @@ func TestConfirmUser(t *testing.T) {
 func TestConfirmUser_AlreadyConfirmedErrors(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
+	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
 	repo.ConfirmUser(context.Background(), user.ID)
 
 	err := repo.ConfirmUser(context.Background(), user.ID)
@@ -169,25 +172,28 @@ func TestConfirmUser_NotFoundErrors(t *testing.T) {
 	}
 }
 
-func TestGetUserByEmail(t *testing.T) {
+func TestGetUserByUnsubscribeToken(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
-	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com")
+	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com", "tok-bob")
 
-	got, err := repo.GetUserByEmail(context.Background(), "bob@example.com")
+	got, err := repo.GetUserByUnsubscribeToken(context.Background(), "tok-bob")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got.Email != "bob@example.com" {
 		t.Errorf("expected email %q, got %q", "bob@example.com", got.Email)
 	}
+	if got.UnsubscribeToken != "tok-bob" {
+		t.Errorf("expected token %q, got %q", "tok-bob", got.UnsubscribeToken)
+	}
 }
 
-func TestGetUserByEmail_NotFound(t *testing.T) {
+func TestGetUserByUnsubscribeToken_NotFound(t *testing.T) {
 	repo := newTestRepo(t)
-	_, err := repo.GetUserByEmail(context.Background(), "nobody@example.com")
+	_, err := repo.GetUserByUnsubscribeToken(context.Background(), "no-such-token")
 	if err == nil {
-		t.Fatal("expected error for unknown email, got nil")
+		t.Fatal("expected error for unknown token, got nil")
 	}
 }
 
@@ -195,8 +201,8 @@ func TestGetConfirmedUsers(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
 
-	confirmed, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
-	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com")
+	confirmed, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com", "tok-bob")
 	repo.ConfirmUser(context.Background(), confirmed.ID)
 
 	users, err := repo.GetConfirmedUsers(context.Background(), listID)
@@ -216,8 +222,8 @@ func TestGetConfirmedUsers_ExcludesOtherLists(t *testing.T) {
 	listA := seedList(t, repo, "list-a")
 	listB := seedList(t, repo, "list-b")
 
-	userA, _ := repo.AddUser(context.Background(), listA, "Alice", "alice@example.com")
-	userB, _ := repo.AddUser(context.Background(), listB, "Bob", "bob@example.com")
+	userA, _ := repo.AddUser(context.Background(), listA, "Alice", "alice@example.com", "tok-alice")
+	userB, _ := repo.AddUser(context.Background(), listB, "Bob", "bob@example.com", "tok-bob")
 	repo.ConfirmUser(context.Background(), userA.ID)
 	repo.ConfirmUser(context.Background(), userB.ID)
 
@@ -233,13 +239,13 @@ func TestGetConfirmedUsers_ExcludesOtherLists(t *testing.T) {
 func TestRemoveUser(t *testing.T) {
 	repo := newTestRepo(t)
 	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com")
+	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
 
 	if err := repo.RemoveUser(context.Background(), user.ID); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	_, err := repo.GetUserByEmail(context.Background(), "alice@example.com")
+	_, err := repo.GetUserByUnsubscribeToken(context.Background(), "tok-alice")
 	if err == nil {
 		t.Fatal("expected error after removing user, got nil")
 	}

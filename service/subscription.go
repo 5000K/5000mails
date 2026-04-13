@@ -47,7 +47,12 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 		return nil, fmt.Errorf("mailing list %q not found: %w", listName, err)
 	}
 
-	user, err := s.users.AddUser(ctx, list.ID, userName, email)
+	unsubToken, err := generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("generating unsubscribe token: %w", err)
+	}
+
+	user, err := s.users.AddUser(ctx, list.ID, userName, email, unsubToken)
 	if err != nil {
 		return nil, fmt.Errorf("adding user to list %q: %w", listName, err)
 	}
@@ -94,12 +99,11 @@ func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
 	return nil
 }
 
-// Unsubscribe removes a user's subscription by their email address.
-// Returns an error if no user with that email exists.
-func (s *SubscriptionService) Unsubscribe(ctx context.Context, email string) error {
-	user, err := s.users.GetUserByEmail(ctx, email)
+// Unsubscribe removes a user identified by their unsubscribe token.
+func (s *SubscriptionService) Unsubscribe(ctx context.Context, unsubscribeToken string) error {
+	user, err := s.users.GetUserByUnsubscribeToken(ctx, unsubscribeToken)
 	if err != nil {
-		return fmt.Errorf("user with email %q not found: %w", email, err)
+		return fmt.Errorf("user with unsubscribe token not found: %w", err)
 	}
 
 	if err := s.users.RemoveUser(ctx, user.ID); err != nil {

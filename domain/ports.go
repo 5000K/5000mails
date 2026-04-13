@@ -11,9 +11,9 @@ type MailingListRepository interface {
 }
 
 type UserRepository interface {
-	AddUser(ctx context.Context, mailingListID uint, name, email string) (*User, error)
+	AddUser(ctx context.Context, mailingListID uint, name, email, unsubscribeToken string) (*User, error)
 	ConfirmUser(ctx context.Context, userID uint) error
-	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	GetUserByUnsubscribeToken(ctx context.Context, token string) (*User, error)
 	GetUsers(ctx context.Context, mailingListID uint) ([]User, error)
 	GetConfirmedUsers(ctx context.Context, mailingListID uint) ([]User, error)
 	RemoveUser(ctx context.Context, userID uint) error
