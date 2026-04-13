@@ -62,26 +62,29 @@ func (s *ListService) Delete(ctx context.Context, id uint) error {
 	return nil
 }
 
-// UserCounts holds the total and confirmed subscriber counts for a mailing list.
-type UserCounts struct {
-	Total     int
-	Confirmed int
-}
-
 // CountUsers returns the total and confirmed subscriber counts for a mailing list.
-func (s *ListService) CountUsers(ctx context.Context, listID uint) (UserCounts, error) {
+func (s *ListService) CountUsers(ctx context.Context, listID uint) (domain.UserCounts, error) {
 	all, err := s.users.GetUsers(ctx, listID)
 	if err != nil {
-		return UserCounts{}, fmt.Errorf("getting users for list %d: %w", listID, err)
+		return domain.UserCounts{}, fmt.Errorf("getting users for list %d: %w", listID, err)
 	}
 
 	confirmed, err := s.users.GetConfirmedUsers(ctx, listID)
 	if err != nil {
-		return UserCounts{}, fmt.Errorf("getting confirmed users for list %d: %w", listID, err)
+		return domain.UserCounts{}, fmt.Errorf("getting confirmed users for list %d: %w", listID, err)
 	}
 
-	return UserCounts{
+	return domain.UserCounts{
 		Total:     len(all),
 		Confirmed: len(confirmed),
 	}, nil
+}
+
+// Users returns all subscribers for a mailing list, confirmed or not.
+func (s *ListService) Users(ctx context.Context, listID uint) ([]domain.User, error) {
+	users, err := s.users.GetUsers(ctx, listID)
+	if err != nil {
+		return nil, fmt.Errorf("getting users for list %d: %w", listID, err)
+	}
+	return users, nil
 }

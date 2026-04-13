@@ -258,3 +258,122 @@ func TestRemoveUser_NotFound(t *testing.T) {
 		t.Fatal("expected error for unknown user, got nil")
 	}
 }
+
+func TestUpdateList(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "original")
+
+	updated, err := repo.UpdateList(context.Background(), list.ID, "renamed")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.Name != "renamed" {
+		t.Errorf("expected %q, got %q", "renamed", updated.Name)
+	}
+}
+
+func TestUpdateList_NotFound(t *testing.T) {
+	repo := newTestRepo(t)
+	_, err := repo.UpdateList(context.Background(), 9999, "nope")
+	if err == nil {
+		t.Fatal("expected error for unknown list, got nil")
+	}
+}
+
+func TestDeleteList(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "doomed")
+
+	if err := repo.DeleteList(context.Background(), list.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_, err := repo.GetList(context.Background(), list.ID)
+	if err == nil {
+		t.Fatal("expected error after deleting list, got nil")
+	}
+}
+
+func TestDeleteList_NotFound(t *testing.T) {
+	repo := newTestRepo(t)
+	err := repo.DeleteList(context.Background(), 9999)
+	if err == nil {
+		t.Fatal("expected error for unknown list, got nil")
+	}
+}
+
+func TestGetUsers(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "weekly")
+	repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	repo.AddUser(context.Background(), list.ID, "Bob", "b@test.com", "tok-b")
+
+	users, err := repo.GetUsers(context.Background(), list.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(users) != 2 {
+		t.Errorf("expected 2 users, got %d", len(users))
+	}
+}
+
+func TestCreateConfirmation(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "weekly")
+	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+
+	conf, err := repo.CreateConfirmation(context.Background(), user.ID, "confirm-tok")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conf.UserID != user.ID || conf.Token != "confirm-tok" {
+		t.Errorf("unexpected confirmation: %+v", conf)
+	}
+}
+
+func TestGetConfirmationByToken(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "weekly")
+	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	repo.CreateConfirmation(context.Background(), user.ID, "find-me")
+
+	conf, err := repo.GetConfirmationByToken(context.Background(), "find-me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conf.Token != "find-me" || conf.UserID != user.ID {
+		t.Errorf("unexpected confirmation: %+v", conf)
+	}
+}
+
+func TestGetConfirmationByToken_NotFound(t *testing.T) {
+	repo := newTestRepo(t)
+	_, err := repo.GetConfirmationByToken(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown token, got nil")
+	}
+}
+
+func TestDeleteConfirmation(t *testing.T) {
+	repo := newTestRepo(t)
+	list, _ := repo.CreateList(context.Background(), "weekly")
+	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	conf, _ := repo.CreateConfirmation(context.Background(), user.ID, "del-me")
+
+	if err := repo.DeleteConfirmation(context.Background(), conf.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_, err := repo.GetConfirmationByToken(context.Background(), "del-me")
+	if err == nil {
+		t.Fatal("expected error after deleting confirmation, got nil")
+	}
+}
+
+func TestDeleteConfirmation_NotFound(t *testing.T) {
+	repo := newTestRepo(t)
+	err := repo.DeleteConfirmation(context.Background(), 9999)
+	if err == nil {
+		t.Fatal("expected error for unknown confirmation, got nil")
+	}
+}

@@ -34,3 +34,9 @@ type Confirmation struct {
 	UserID uint
 	Token  string
 }
+
+// UserCounts holds subscriber totals for a mailing list.
+type UserCounts struct {
+	Total     int
+	Confirmed int
+}

@@ -29,16 +29,25 @@ type SmtpConfig struct {
 }
 
 type Config struct {
-	// used as base url for the confirmation link in the confirmation mail.
-	BaseURL string `env:"BASE_URL" env-default:":8080" yaml:"base-url"`
+	PublicAddr  string `env:"PUBLIC_ADDR" env-default:":8080" yaml:"public-addr"`
+	PrivateAddr string `env:"PRIVATE_ADDR" env-default:":9000" yaml:"private-addr"`
 
 	Smtp SmtpConfig `yaml:"smtp"`
 
-	Paths struct {
-		Config string `env:"CONFIG_PATH" env-default:"config.yml"`
+	DB struct {
+		Type string `env:"DB_TYPE" env-default:"sqlite" yaml:"type"`
+		DSN  string `env:"DB_DSN" env-default:"5000mails.db" yaml:"dsn"`
+	} `yaml:"db"`
 
-		Template string `env:"TEMPLATE_PATH" env-default:"./template.html" yaml:"template"`
-		Theme    string `env:"THEME_PATH" env-default:"./theme.css" yaml:"theme"`
+	Auth struct {
+		PublicKeyPath string `env:"AUTH_PUBLIC_KEY_PATH" yaml:"public-key-path"`
+	} `yaml:"auth"`
+
+	Paths struct {
+		Config      string `env:"CONFIG_PATH" env-default:"config.yml"`
+		Template    string `env:"TEMPLATE_PATH" env-default:"./template.html" yaml:"template"`
+		Theme       string `env:"THEME_PATH" env-default:"./theme.css" yaml:"theme"`
+		ConfirmMail string `env:"CONFIRM_MAIL_PATH" env-default:"./confirm.md" yaml:"confirm-mail"`
 	} `yaml:"paths"`
 }
 

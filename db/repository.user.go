@@ -120,3 +120,73 @@ func (r *MailingListRepository) RemoveUser(ctx context.Context, userID uint) err
 	)
 	return nil
 }
+
+func (r *MailingListRepository) GetUsers(ctx context.Context, mailingListID uint) ([]domain.User, error) {
+	var users []User
+
+	result := r.db.WithContext(ctx).Where("mailing_list_id = ?", mailingListID).Find(&users)
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to get users",
+			slog.Uint64("mailing_list_id", uint64(mailingListID)),
+			slog.Any("error", result.Error),
+		)
+		return nil, fmt.Errorf("get users: %w", result.Error)
+	}
+
+	r.logger.InfoContext(ctx, "fetched users",
+		slog.Uint64("mailing_list_id", uint64(mailingListID)),
+		slog.Int("count", len(users)),
+	)
+	return ToDomainUsers(users), nil
+}
+
+func (r *MailingListRepository) CreateConfirmation(ctx context.Context, userID uint, token string) (*domain.Confirmation, error) {
+	c := &Confirmation{UserID: userID, Token: token}
+
+	result := r.db.WithContext(ctx).Create(c)
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to create confirmation",
+			slog.Uint64("user_id", uint64(userID)),
+			slog.Any("error", result.Error),
+		)
+		return nil, fmt.Errorf("create confirmation: %w", result.Error)
+	}
+
+	r.logger.InfoContext(ctx, "created confirmation",
+		slog.Uint64("user_id", uint64(userID)),
+		slog.Uint64("confirmation_id", uint64(c.ID)),
+	)
+	return ToDomainConfirmation(c), nil
+}
+
+func (r *MailingListRepository) GetConfirmationByToken(ctx context.Context, token string) (*domain.Confirmation, error) {
+	var c Confirmation
+
+	result := r.db.WithContext(ctx).Where("token = ?", token).First(&c)
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to get confirmation by token",
+			slog.Any("error", result.Error),
+		)
+		return nil, fmt.Errorf("get confirmation by token: %w", result.Error)
+	}
+
+	return ToDomainConfirmation(&c), nil
+}
+
+func (r *MailingListRepository) DeleteConfirmation(ctx context.Context, id uint) error {
+	result := r.db.WithContext(ctx).Delete(&Confirmation{}, id)
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to delete confirmation",
+			slog.Uint64("id", uint64(id)),
+			slog.Any("error", result.Error),
+		)
+		return fmt.Errorf("delete confirmation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("delete confirmation: confirmation %d not found", id)
+	}
+	r.logger.InfoContext(ctx, "deleted confirmation",
+		slog.Uint64("id", uint64(id)),
+	)
+	return nil
+}

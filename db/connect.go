@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"gorm.io/driver/mysql"
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func connect(dbType string, dsn string) (*gorm.DB, error) {
+func Connect(dbType string, dsn string) (*gorm.DB, error) {
 	switch dbType {
 	case "mysql":
 		slog.Debug("connecting to mysql")
@@ -28,4 +29,11 @@ func connect(dbType string, dsn string) (*gorm.DB, error) {
 		slog.Error("Unknown database type", "db-type", dbType)
 		return nil, errors.New("unknown database type: " + dbType)
 	}
+}
+
+func AutoMigrate(database *gorm.DB) error {
+	if err := database.AutoMigrate(&MailingList{}, &User{}, &Confirmation{}); err != nil {
+		return fmt.Errorf("auto-migrating database: %w", err)
+	}
+	return nil
 }
