@@ -35,7 +35,7 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 		return fmt.Errorf("looking up list %q: %w", listName, err)
 	}
 
-	recipients, err := s.users.GetConfirmedUsers(ctx, list.ID)
+	recipients, err := s.users.GetConfirmedUsers(ctx, list.Name)
 	if err != nil {
 		return fmt.Errorf("getting confirmed users for list %q: %w", listName, err)
 	}

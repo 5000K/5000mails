@@ -32,9 +32,6 @@ func TestCreateList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if list.ID == 0 {
-		t.Error("expected non-zero ID")
-	}
 	if list.Name != "weekly" {
 		t.Errorf("expected name %q, got %q", "weekly", list.Name)
 	}
@@ -48,27 +45,6 @@ func TestCreateList_DuplicateNameErrors(t *testing.T) {
 	_, err := repo.CreateList(context.Background(), "weekly")
 	if err == nil {
 		t.Fatal("expected error for duplicate name, got nil")
-	}
-}
-
-func TestGetList(t *testing.T) {
-	repo := newTestRepo(t)
-	created, _ := repo.CreateList(context.Background(), "monthly")
-
-	got, err := repo.GetList(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got.ID != created.ID || got.Name != created.Name {
-		t.Errorf("got %+v, want %+v", got, created)
-	}
-}
-
-func TestGetList_NotFound(t *testing.T) {
-	repo := newTestRepo(t)
-	_, err := repo.GetList(context.Background(), 9999)
-	if err == nil {
-		t.Fatal("expected error for unknown ID, got nil")
 	}
 }
 
@@ -95,20 +71,20 @@ func TestGetListByName_NotFound(t *testing.T) {
 
 // ---------- User ----------
 
-func seedList(t *testing.T, repo *MailingListRepository, name string) uint {
+func seedList(t *testing.T, repo *MailingListRepository, name string) string {
 	t.Helper()
 	list, err := repo.CreateList(context.Background(), name)
 	if err != nil {
 		t.Fatalf("seed list %q: %v", name, err)
 	}
-	return list.ID
+	return list.Name
 }
 
 func TestAddUser(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
+	listName := seedList(t, repo, "weekly")
 
-	user, err := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	user, err := repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,10 +104,10 @@ func TestAddUser(t *testing.T) {
 
 func TestAddUser_DuplicateEmailErrors(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
-	repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	listName := seedList(t, repo, "weekly")
+	repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
 
-	_, err := repo.AddUser(context.Background(), listID, "Alice2", "alice@example.com", "tok-alice-2")
+	_, err := repo.AddUser(context.Background(), listName, "Alice2", "alice@example.com", "tok-alice-2")
 	if err == nil {
 		t.Fatal("expected error for duplicate email on same list, got nil")
 	}
@@ -139,8 +115,8 @@ func TestAddUser_DuplicateEmailErrors(t *testing.T) {
 
 func TestConfirmUser(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	listName := seedList(t, repo, "weekly")
+	user, _ := repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
 
 	if err := repo.ConfirmUser(context.Background(), user.ID); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -154,8 +130,8 @@ func TestConfirmUser(t *testing.T) {
 
 func TestConfirmUser_AlreadyConfirmedErrors(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	listName := seedList(t, repo, "weekly")
+	user, _ := repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
 	repo.ConfirmUser(context.Background(), user.ID)
 
 	err := repo.ConfirmUser(context.Background(), user.ID)
@@ -174,8 +150,8 @@ func TestConfirmUser_NotFoundErrors(t *testing.T) {
 
 func TestGetUserByUnsubscribeToken(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
-	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com", "tok-bob")
+	listName := seedList(t, repo, "weekly")
+	repo.AddUser(context.Background(), listName, "Bob", "bob@example.com", "tok-bob")
 
 	got, err := repo.GetUserByUnsubscribeToken(context.Background(), "tok-bob")
 	if err != nil {
@@ -199,13 +175,13 @@ func TestGetUserByUnsubscribeToken_NotFound(t *testing.T) {
 
 func TestGetConfirmedUsers(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
+	listName := seedList(t, repo, "weekly")
 
-	confirmed, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
-	repo.AddUser(context.Background(), listID, "Bob", "bob@example.com", "tok-bob")
+	confirmed, _ := repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
+	repo.AddUser(context.Background(), listName, "Bob", "bob@example.com", "tok-bob")
 	repo.ConfirmUser(context.Background(), confirmed.ID)
 
-	users, err := repo.GetConfirmedUsers(context.Background(), listID)
+	users, err := repo.GetConfirmedUsers(context.Background(), listName)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,8 +214,8 @@ func TestGetConfirmedUsers_ExcludesOtherLists(t *testing.T) {
 
 func TestRemoveUser(t *testing.T) {
 	repo := newTestRepo(t)
-	listID := seedList(t, repo, "weekly")
-	user, _ := repo.AddUser(context.Background(), listID, "Alice", "alice@example.com", "tok-alice")
+	listName := seedList(t, repo, "weekly")
+	user, _ := repo.AddUser(context.Background(), listName, "Alice", "alice@example.com", "tok-alice")
 
 	if err := repo.RemoveUser(context.Background(), user.ID); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -261,9 +237,9 @@ func TestRemoveUser_NotFound(t *testing.T) {
 
 func TestUpdateList(t *testing.T) {
 	repo := newTestRepo(t)
-	list, _ := repo.CreateList(context.Background(), "original")
+	repo.CreateList(context.Background(), "original")
 
-	updated, err := repo.UpdateList(context.Background(), list.ID, "renamed")
+	updated, err := repo.RenameList(context.Background(), "original", "renamed")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,7 +250,7 @@ func TestUpdateList(t *testing.T) {
 
 func TestUpdateList_NotFound(t *testing.T) {
 	repo := newTestRepo(t)
-	_, err := repo.UpdateList(context.Background(), 9999, "nope")
+	_, err := repo.RenameList(context.Background(), "ghost", "nope")
 	if err == nil {
 		t.Fatal("expected error for unknown list, got nil")
 	}
@@ -282,13 +258,13 @@ func TestUpdateList_NotFound(t *testing.T) {
 
 func TestDeleteList(t *testing.T) {
 	repo := newTestRepo(t)
-	list, _ := repo.CreateList(context.Background(), "doomed")
+	repo.CreateList(context.Background(), "doomed")
 
-	if err := repo.DeleteList(context.Background(), list.ID); err != nil {
+	if err := repo.DeleteList(context.Background(), "doomed"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	_, err := repo.GetList(context.Background(), list.ID)
+	_, err := repo.GetListByName(context.Background(), "doomed")
 	if err == nil {
 		t.Fatal("expected error after deleting list, got nil")
 	}
@@ -296,7 +272,7 @@ func TestDeleteList(t *testing.T) {
 
 func TestDeleteList_NotFound(t *testing.T) {
 	repo := newTestRepo(t)
-	err := repo.DeleteList(context.Background(), 9999)
+	err := repo.DeleteList(context.Background(), "ghost")
 	if err == nil {
 		t.Fatal("expected error for unknown list, got nil")
 	}
@@ -305,10 +281,10 @@ func TestDeleteList_NotFound(t *testing.T) {
 func TestGetUsers(t *testing.T) {
 	repo := newTestRepo(t)
 	list, _ := repo.CreateList(context.Background(), "weekly")
-	repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
-	repo.AddUser(context.Background(), list.ID, "Bob", "b@test.com", "tok-b")
+	repo.AddUser(context.Background(), list.Name, "Alice", "a@test.com", "tok-a")
+	repo.AddUser(context.Background(), list.Name, "Bob", "b@test.com", "tok-b")
 
-	users, err := repo.GetUsers(context.Background(), list.ID)
+	users, err := repo.GetUsers(context.Background(), list.Name)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -320,7 +296,7 @@ func TestGetUsers(t *testing.T) {
 func TestCreateConfirmation(t *testing.T) {
 	repo := newTestRepo(t)
 	list, _ := repo.CreateList(context.Background(), "weekly")
-	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	user, _ := repo.AddUser(context.Background(), list.Name, "Alice", "a@test.com", "tok-a")
 
 	conf, err := repo.CreateConfirmation(context.Background(), user.ID, "confirm-tok")
 	if err != nil {
@@ -334,7 +310,7 @@ func TestCreateConfirmation(t *testing.T) {
 func TestGetConfirmationByToken(t *testing.T) {
 	repo := newTestRepo(t)
 	list, _ := repo.CreateList(context.Background(), "weekly")
-	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	user, _ := repo.AddUser(context.Background(), list.Name, "Alice", "a@test.com", "tok-a")
 	repo.CreateConfirmation(context.Background(), user.ID, "find-me")
 
 	conf, err := repo.GetConfirmationByToken(context.Background(), "find-me")
@@ -357,7 +333,7 @@ func TestGetConfirmationByToken_NotFound(t *testing.T) {
 func TestDeleteConfirmation(t *testing.T) {
 	repo := newTestRepo(t)
 	list, _ := repo.CreateList(context.Background(), "weekly")
-	user, _ := repo.AddUser(context.Background(), list.ID, "Alice", "a@test.com", "tok-a")
+	user, _ := repo.AddUser(context.Background(), list.Name, "Alice", "a@test.com", "tok-a")
 	conf, _ := repo.CreateConfirmation(context.Background(), user.ID, "del-me")
 
 	if err := repo.DeleteConfirmation(context.Background(), conf.ID); err != nil {

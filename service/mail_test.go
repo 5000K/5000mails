@@ -9,14 +9,14 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-func confirmedUser(id uint, listID uint, email string) *domain.User {
+func confirmedUser(id uint, listName string, email string) *domain.User {
 	now := time.Now()
-	return &domain.User{ID: id, MailingListID: listID, Email: email, Name: "Test", ConfirmedAt: &now}
+	return &domain.User{ID: id, MailingListName: listName, Email: email, Name: "Test", ConfirmedAt: &now}
 }
 
 func TestMailService_SendToList(t *testing.T) {
 	metadata := domain.MailMetadata{Subject: "Hello", SenderName: "Bot"}
-	list := &domain.MailingList{ID: 5, Name: "weekly"}
+	list := &domain.MailingList{Name: "weekly"}
 
 	t.Run("skips send when no confirmed recipients", func(t *testing.T) {
 		sender := &fakeSender{}
@@ -36,8 +36,8 @@ func TestMailService_SendToList(t *testing.T) {
 
 	t.Run("renders and sends to confirmed recipients", func(t *testing.T) {
 		users := newFakeUserRepo(
-			confirmedUser(1, 5, "alice@example.com"),
-			confirmedUser(2, 5, "bob@example.com"),
+			confirmedUser(1, "weekly", "alice@example.com"),
+			confirmedUser(2, "weekly", "bob@example.com"),
 		)
 		sender := &fakeSender{}
 		svc := NewMailService(newFakeListRepo(list), users, &fakeRenderer{metadata: metadata, body: "rendered"}, sender)
@@ -64,7 +64,7 @@ func TestMailService_SendToList(t *testing.T) {
 	})
 
 	t.Run("injects Recipient into render data per recipient", func(t *testing.T) {
-		user := confirmedUser(1, 5, "alice@example.com")
+		user := confirmedUser(1, "weekly", "alice@example.com")
 		renderer := &fakeRenderer{metadata: metadata, body: "body"}
 		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), renderer, &fakeSender{})
 
@@ -104,7 +104,7 @@ func TestMailService_SendToList(t *testing.T) {
 		renderErr := errors.New("template broken")
 		svc := NewMailService(
 			newFakeListRepo(list),
-			newFakeUserRepo(confirmedUser(1, 5, "a@example.com")),
+			newFakeUserRepo(confirmedUser(1, "weekly", "a@example.com")),
 			&fakeRenderer{err: renderErr},
 			&fakeSender{},
 		)
@@ -118,7 +118,7 @@ func TestMailService_SendToList(t *testing.T) {
 		sendErr := errors.New("smtp refused")
 		svc := NewMailService(
 			newFakeListRepo(list),
-			newFakeUserRepo(confirmedUser(1, 5, "a@example.com")),
+			newFakeUserRepo(confirmedUser(1, "weekly", "a@example.com")),
 			&fakeRenderer{metadata: metadata, body: "body"},
 			&fakeSender{err: sendErr},
 		)

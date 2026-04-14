@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/5000K/5000mails/api"
@@ -21,10 +20,10 @@ Global flags:
 
 Commands:
   list   create   --name NAME                       Create a mailing list
-  list   get      --id ID                           Get list details and stats
-  list   rename   --id ID --name NAME               Rename a mailing list
-  list   delete   --id ID                           Delete a mailing list
-  list   users    --id ID                           List subscribers
+  list   get      --name NAME                       Get list details and stats
+  list   rename   --name NAME --new-name NEWNAME    Rename a mailing list
+  list   delete   --name NAME                       Delete a mailing list
+  list   users    --name NAME                       List subscribers
 
   send   list     --list NAME --raw-path PATH       Send mail to all confirmed subscribers
   send   test     --name NAME --email EMAIL         Send a test mail
@@ -177,12 +176,12 @@ func listCreate(args []string, client *api.PrivateClient, stdout, stderr io.Writ
 }
 
 func listGet(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
-	id, ok := flagUint(args, "--id")
-	if !ok {
-		fmt.Fprintln(stderr, "usage: 5kmcli list get --id ID")
+	name := flagValue(args, "--name")
+	if name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli list get --name NAME")
 		return 1
 	}
-	resp, err := client.GetList(context.Background(), id)
+	resp, err := client.GetList(context.Background(), name)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -192,13 +191,13 @@ func listGet(args []string, client *api.PrivateClient, stdout, stderr io.Writer)
 }
 
 func listRename(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
-	id, ok := flagUint(args, "--id")
 	name := flagValue(args, "--name")
-	if !ok || name == "" {
-		fmt.Fprintln(stderr, "usage: 5kmcli list rename --id ID --name NAME")
+	newName := flagValue(args, "--new-name")
+	if name == "" || newName == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli list rename --name NAME --new-name NEWNAME")
 		return 1
 	}
-	resp, err := client.RenameList(context.Background(), id, name)
+	resp, err := client.RenameList(context.Background(), name, newName)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -208,12 +207,12 @@ func listRename(args []string, client *api.PrivateClient, stdout, stderr io.Writ
 }
 
 func listDelete(args []string, client *api.PrivateClient, _, stderr io.Writer) int {
-	id, ok := flagUint(args, "--id")
-	if !ok {
-		fmt.Fprintln(stderr, "usage: 5kmcli list delete --id ID")
+	name := flagValue(args, "--name")
+	if name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli list delete --name NAME")
 		return 1
 	}
-	if err := client.DeleteList(context.Background(), id); err != nil {
+	if err := client.DeleteList(context.Background(), name); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
@@ -221,12 +220,12 @@ func listDelete(args []string, client *api.PrivateClient, _, stderr io.Writer) i
 }
 
 func listUsers(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
-	id, ok := flagUint(args, "--id")
-	if !ok {
-		fmt.Fprintln(stderr, "usage: 5kmcli list users --id ID")
+	name := flagValue(args, "--name")
+	if name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli list users --name NAME")
 		return 1
 	}
-	resp, err := client.GetUsers(context.Background(), id)
+	resp, err := client.GetUsers(context.Background(), name)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -320,18 +319,6 @@ func flagValue(args []string, name string) string {
 		}
 	}
 	return ""
-}
-
-func flagUint(args []string, name string) (uint, bool) {
-	v := flagValue(args, name)
-	if v == "" {
-		return 0, false
-	}
-	n, err := strconv.ParseUint(v, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return uint(n), true
 }
 
 func collectData(args []string) map[string]any {

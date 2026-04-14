@@ -22,58 +22,55 @@ import (
 // --- fakes (same shape as api tests) ---
 
 type fakeListManager struct {
-	lists  map[uint]*domain.MailingList
-	nextID uint
-	users  []*domain.User
+	lists map[string]*domain.MailingList
+	users []*domain.User
 }
 
 func newFakeListManager(lists ...*domain.MailingList) *fakeListManager {
-	m := &fakeListManager{lists: make(map[uint]*domain.MailingList), nextID: 1}
+	m := &fakeListManager{lists: make(map[string]*domain.MailingList)}
 	for _, l := range lists {
-		m.lists[l.ID] = l
-		if l.ID >= m.nextID {
-			m.nextID = l.ID + 1
-		}
+		m.lists[l.Name] = l
 	}
 	return m
 }
 
 func (f *fakeListManager) Create(_ context.Context, name string) (*domain.MailingList, error) {
-	l := &domain.MailingList{ID: f.nextID, Name: name}
-	f.nextID++
-	f.lists[l.ID] = l
+	l := &domain.MailingList{Name: name}
+	f.lists[name] = l
 	return l, nil
 }
 
-func (f *fakeListManager) Get(_ context.Context, id uint) (*domain.MailingList, error) {
-	l, ok := f.lists[id]
+func (f *fakeListManager) Get(_ context.Context, name string) (*domain.MailingList, error) {
+	l, ok := f.lists[name]
 	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
+		return nil, fmt.Errorf("list %q not found", name)
 	}
 	return l, nil
 }
 
-func (f *fakeListManager) Rename(_ context.Context, id uint, name string) (*domain.MailingList, error) {
-	l, ok := f.lists[id]
+func (f *fakeListManager) Rename(_ context.Context, name, newName string) (*domain.MailingList, error) {
+	l, ok := f.lists[name]
 	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
+		return nil, fmt.Errorf("list %q not found", name)
 	}
-	l.Name = name
+	delete(f.lists, name)
+	l.Name = newName
+	f.lists[newName] = l
 	return l, nil
 }
 
-func (f *fakeListManager) Delete(_ context.Context, id uint) error {
-	if _, ok := f.lists[id]; !ok {
-		return fmt.Errorf("list %d not found", id)
+func (f *fakeListManager) Delete(_ context.Context, name string) error {
+	if _, ok := f.lists[name]; !ok {
+		return fmt.Errorf("list %q not found", name)
 	}
-	delete(f.lists, id)
+	delete(f.lists, name)
 	return nil
 }
 
-func (f *fakeListManager) CountUsers(_ context.Context, listID uint) (domain.UserCounts, error) {
+func (f *fakeListManager) CountUsers(_ context.Context, listName string) (domain.UserCounts, error) {
 	var total, confirmed int
 	for _, u := range f.users {
-		if u.MailingListID == listID {
+		if u.MailingListName == listName {
 			total++
 			if u.IsConfirmed() {
 				confirmed++
@@ -83,10 +80,10 @@ func (f *fakeListManager) CountUsers(_ context.Context, listID uint) (domain.Use
 	return domain.UserCounts{Total: total, Confirmed: confirmed}, nil
 }
 
-func (f *fakeListManager) Users(_ context.Context, listID uint) ([]domain.User, error) {
+func (f *fakeListManager) Users(_ context.Context, listName string) ([]domain.User, error) {
 	var out []domain.User
 	for _, u := range f.users {
-		if u.MailingListID == listID {
+		if u.MailingListName == listName {
 			out = append(out, *u)
 		}
 	}
@@ -244,15 +241,15 @@ func TestListCreate(t *testing.T) {
 
 func TestListGet(t *testing.T) {
 	now := time.Now()
-	m := newFakeListManager(&domain.MailingList{ID: 1, Name: "weekly"})
+	m := newFakeListManager(&domain.MailingList{Name: "weekly"})
 	m.users = []*domain.User{
-		{ID: 1, MailingListID: 1, Email: "a@test.com", ConfirmedAt: &now},
+		{ID: 1, MailingListName: "weekly", Email: "a@test.com", ConfirmedAt: &now},
 	}
 	srv := startTestServer(t, m, &fakeMailDispatcher{}, nil)
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--server", srv.URL, "list", "get", "--id", "1"}, &stdout, &stderr)
+	code := Run([]string{"--server", srv.URL, "list", "get", "--name", "weekly"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected 0, got %d: %s", code, stderr.String())
 	}
@@ -266,12 +263,12 @@ func TestListGet(t *testing.T) {
 }
 
 func TestListRename(t *testing.T) {
-	m := newFakeListManager(&domain.MailingList{ID: 1, Name: "old"})
+	m := newFakeListManager(&domain.MailingList{Name: "old"})
 	srv := startTestServer(t, m, &fakeMailDispatcher{}, nil)
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--server", srv.URL, "list", "rename", "--id", "1", "--name", "new"}, &stdout, &stderr)
+	code := Run([]string{"--server", srv.URL, "list", "rename", "--name", "old", "--new-name", "new"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected 0, got %d: %s", code, stderr.String())
 	}
@@ -283,32 +280,32 @@ func TestListRename(t *testing.T) {
 }
 
 func TestListDelete(t *testing.T) {
-	m := newFakeListManager(&domain.MailingList{ID: 1, Name: "bye"})
+	m := newFakeListManager(&domain.MailingList{Name: "bye"})
 	srv := startTestServer(t, m, &fakeMailDispatcher{}, nil)
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--server", srv.URL, "list", "delete", "--id", "1"}, &stdout, &stderr)
+	code := Run([]string{"--server", srv.URL, "list", "delete", "--name", "bye"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected 0, got %d: %s", code, stderr.String())
 	}
-	if _, exists := m.lists[1]; exists {
+	if _, exists := m.lists["bye"]; exists {
 		t.Error("list should have been deleted")
 	}
 }
 
 func TestListUsers(t *testing.T) {
 	now := time.Now()
-	m := newFakeListManager(&domain.MailingList{ID: 1, Name: "weekly"})
+	m := newFakeListManager(&domain.MailingList{Name: "weekly"})
 	m.users = []*domain.User{
-		{ID: 1, MailingListID: 1, Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
-		{ID: 2, MailingListID: 1, Name: "Bob", Email: "b@test.com"},
+		{ID: 1, MailingListName: "weekly", Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
+		{ID: 2, MailingListName: "weekly", Name: "Bob", Email: "b@test.com"},
 	}
 	srv := startTestServer(t, m, &fakeMailDispatcher{}, nil)
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--server", srv.URL, "list", "users", "--id", "1"}, &stdout, &stderr)
+	code := Run([]string{"--server", srv.URL, "list", "users", "--name", "weekly"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected 0, got %d: %s", code, stderr.String())
 	}

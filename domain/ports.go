@@ -4,18 +4,17 @@ import "context"
 
 type MailingListRepository interface {
 	CreateList(ctx context.Context, name string) (*MailingList, error)
-	GetList(ctx context.Context, id uint) (*MailingList, error)
 	GetListByName(ctx context.Context, name string) (*MailingList, error)
-	UpdateList(ctx context.Context, id uint, name string) (*MailingList, error)
-	DeleteList(ctx context.Context, id uint) error
+	RenameList(ctx context.Context, name, newName string) (*MailingList, error)
+	DeleteList(ctx context.Context, name string) error
 }
 
 type UserRepository interface {
-	AddUser(ctx context.Context, mailingListID uint, name, email, unsubscribeToken string) (*User, error)
+	AddUser(ctx context.Context, mailingListName string, name, email, unsubscribeToken string) (*User, error)
 	ConfirmUser(ctx context.Context, userID uint) error
 	GetUserByUnsubscribeToken(ctx context.Context, token string) (*User, error)
-	GetUsers(ctx context.Context, mailingListID uint) ([]User, error)
-	GetConfirmedUsers(ctx context.Context, mailingListID uint) ([]User, error)
+	GetUsers(ctx context.Context, mailingListName string) ([]User, error)
+	GetConfirmedUsers(ctx context.Context, mailingListName string) ([]User, error)
 	RemoveUser(ctx context.Context, userID uint) error
 }
 

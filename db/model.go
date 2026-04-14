@@ -8,9 +8,8 @@ import (
 )
 
 type MailingList struct {
-	gorm.Model
-	Name  string `gorm:"not null;uniqueIndex"`
-	Users []User `gorm:"foreignKey:MailingListID"`
+	Name  string `gorm:"primaryKey"`
+	Users []User `gorm:"foreignKey:MailingListName"`
 }
 
 type User struct {
@@ -18,7 +17,7 @@ type User struct {
 	Name             string `gorm:"not null"`
 	Email            string `gorm:"not null;uniqueIndex:idx_user_email_list"`
 	ConfirmedAt      *time.Time
-	MailingListID    uint   `gorm:"not null;uniqueIndex:idx_user_email_list"`
+	MailingListName  string `gorm:"not null;uniqueIndex:idx_user_email_list"`
 	UnsubscribeToken string `gorm:"not null;uniqueIndex"`
 }
 
@@ -27,7 +26,7 @@ func ToGORMUser(u *domain.User) *User {
 		Name:             u.Name,
 		Email:            u.Email,
 		ConfirmedAt:      u.ConfirmedAt,
-		MailingListID:    u.MailingListID,
+		MailingListName:  u.MailingListName,
 		UnsubscribeToken: u.UnsubscribeToken,
 	}
 }
@@ -38,7 +37,7 @@ func ToDomainUser(u *User) *domain.User {
 		Name:             u.Name,
 		Email:            u.Email,
 		ConfirmedAt:      u.ConfirmedAt,
-		MailingListID:    u.MailingListID,
+		MailingListName:  u.MailingListName,
 		UnsubscribeToken: u.UnsubscribeToken,
 	}
 }
@@ -51,15 +50,8 @@ func ToDomainUsers(users []User) []domain.User {
 	return result
 }
 
-func ToGORMList(l *domain.MailingList) *MailingList {
-	return &MailingList{
-		Name: l.Name,
-	}
-}
-
 func ToDomainList(l *MailingList) *domain.MailingList {
 	return &domain.MailingList{
-		ID:   l.ID,
 		Name: l.Name,
 	}
 }

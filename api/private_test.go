@@ -21,9 +21,8 @@ import (
 // --- fakes ---
 
 type fakeListManager struct {
-	lists  map[uint]*domain.MailingList
-	nextID uint
-	users  []*domain.User
+	lists map[string]*domain.MailingList
+	users []*domain.User
 
 	createErr     error
 	getErr        error
@@ -34,12 +33,9 @@ type fakeListManager struct {
 }
 
 func newFakeListManager(lists ...*domain.MailingList) *fakeListManager {
-	m := &fakeListManager{lists: make(map[uint]*domain.MailingList), nextID: 1}
+	m := &fakeListManager{lists: make(map[string]*domain.MailingList)}
 	for _, l := range lists {
-		m.lists[l.ID] = l
-		if l.ID >= m.nextID {
-			m.nextID = l.ID + 1
-		}
+		m.lists[l.Name] = l
 	}
 	return m
 }
@@ -48,53 +44,54 @@ func (f *fakeListManager) Create(_ context.Context, name string) (*domain.Mailin
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
-	l := &domain.MailingList{ID: f.nextID, Name: name}
-	f.nextID++
-	f.lists[l.ID] = l
+	l := &domain.MailingList{Name: name}
+	f.lists[name] = l
 	return l, nil
 }
 
-func (f *fakeListManager) Get(_ context.Context, id uint) (*domain.MailingList, error) {
+func (f *fakeListManager) Get(_ context.Context, name string) (*domain.MailingList, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
-	l, ok := f.lists[id]
+	l, ok := f.lists[name]
 	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
+		return nil, fmt.Errorf("list %q not found", name)
 	}
 	return l, nil
 }
 
-func (f *fakeListManager) Rename(_ context.Context, id uint, name string) (*domain.MailingList, error) {
+func (f *fakeListManager) Rename(_ context.Context, name, newName string) (*domain.MailingList, error) {
 	if f.renameErr != nil {
 		return nil, f.renameErr
 	}
-	l, ok := f.lists[id]
+	l, ok := f.lists[name]
 	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
+		return nil, fmt.Errorf("list %q not found", name)
 	}
-	l.Name = name
+	delete(f.lists, name)
+	l.Name = newName
+	f.lists[newName] = l
 	return l, nil
 }
 
-func (f *fakeListManager) Delete(_ context.Context, id uint) error {
+func (f *fakeListManager) Delete(_ context.Context, name string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
-	if _, ok := f.lists[id]; !ok {
-		return fmt.Errorf("list %d not found", id)
+	if _, ok := f.lists[name]; !ok {
+		return fmt.Errorf("list %q not found", name)
 	}
-	delete(f.lists, id)
+	delete(f.lists, name)
 	return nil
 }
 
-func (f *fakeListManager) CountUsers(_ context.Context, listID uint) (domain.UserCounts, error) {
+func (f *fakeListManager) CountUsers(_ context.Context, listName string) (domain.UserCounts, error) {
 	if f.countUsersErr != nil {
 		return domain.UserCounts{}, f.countUsersErr
 	}
 	var total, confirmed int
 	for _, u := range f.users {
-		if u.MailingListID == listID {
+		if u.MailingListName == listName {
 			total++
 			if u.IsConfirmed() {
 				confirmed++
@@ -104,13 +101,13 @@ func (f *fakeListManager) CountUsers(_ context.Context, listID uint) (domain.Use
 	return domain.UserCounts{Total: total, Confirmed: confirmed}, nil
 }
 
-func (f *fakeListManager) Users(_ context.Context, listID uint) ([]domain.User, error) {
+func (f *fakeListManager) Users(_ context.Context, listName string) ([]domain.User, error) {
 	if f.usersErr != nil {
 		return nil, f.usersErr
 	}
 	var out []domain.User
 	for _, u := range f.users {
-		if u.MailingListID == listID {
+		if u.MailingListName == listName {
 			out = append(out, *u)
 		}
 	}
@@ -227,17 +224,17 @@ func TestPrivateHandler_CreateList(t *testing.T) {
 
 func TestPrivateHandler_GetList(t *testing.T) {
 	now := time.Now()
-	list := &domain.MailingList{ID: 1, Name: "weekly"}
+	list := &domain.MailingList{Name: "weekly"}
 
 	t.Run("returns list with stats", func(t *testing.T) {
 		m := newFakeListManager(list)
 		m.users = []*domain.User{
-			{ID: 1, MailingListID: 1, Email: "a@test.com", ConfirmedAt: &now},
-			{ID: 2, MailingListID: 1, Email: "b@test.com"},
+			{ID: 1, MailingListName: "weekly", Email: "a@test.com", ConfirmedAt: &now},
+			{ID: 2, MailingListName: "weekly", Email: "b@test.com"},
 		}
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodGet, "/lists/1", nil)
-		req.SetPathValue("id", "1")
+		req := httptest.NewRequest(http.MethodGet, "/lists/weekly", nil)
+		req.SetPathValue("name", "weekly")
 		w := httptest.NewRecorder()
 		h.handleGetList(w, req)
 
@@ -246,7 +243,7 @@ func TestPrivateHandler_GetList(t *testing.T) {
 		}
 		var resp listDetailResponse
 		decodeJSON(t, w, &resp)
-		if resp.ID != 1 || resp.Name != "weekly" {
+		if resp.Name != "weekly" {
 			t.Errorf("unexpected list: %+v", resp)
 		}
 		if resp.Subscribers.Total != 2 || resp.Subscribers.Confirmed != 1 {
@@ -256,8 +253,8 @@ func TestPrivateHandler_GetList(t *testing.T) {
 
 	t.Run("returns 404 when list not found", func(t *testing.T) {
 		h := newPrivateTestHandler(newFakeListManager(), &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodGet, "/lists/99", nil)
-		req.SetPathValue("id", "99")
+		req := httptest.NewRequest(http.MethodGet, "/lists/ghost", nil)
+		req.SetPathValue("name", "ghost")
 		w := httptest.NewRecorder()
 		h.handleGetList(w, req)
 		if w.Code != http.StatusNotFound {
@@ -268,11 +265,11 @@ func TestPrivateHandler_GetList(t *testing.T) {
 
 func TestPrivateHandler_RenameList(t *testing.T) {
 	t.Run("returns updated list", func(t *testing.T) {
-		m := newFakeListManager(&domain.MailingList{ID: 1, Name: "old"})
+		m := newFakeListManager(&domain.MailingList{Name: "old"})
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodPut, "/lists/1", jsonBody(t, map[string]string{"name": "new"}))
+		req := httptest.NewRequest(http.MethodPut, "/lists/old", jsonBody(t, map[string]string{"name": "new"}))
 		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("id", "1")
+		req.SetPathValue("name", "old")
 		w := httptest.NewRecorder()
 		h.handleRenameList(w, req)
 
@@ -287,11 +284,11 @@ func TestPrivateHandler_RenameList(t *testing.T) {
 	})
 
 	t.Run("returns 400 when name missing", func(t *testing.T) {
-		m := newFakeListManager(&domain.MailingList{ID: 1, Name: "old"})
+		m := newFakeListManager(&domain.MailingList{Name: "old"})
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodPut, "/lists/1", jsonBody(t, map[string]string{}))
+		req := httptest.NewRequest(http.MethodPut, "/lists/old", jsonBody(t, map[string]string{}))
 		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("id", "1")
+		req.SetPathValue("name", "old")
 		w := httptest.NewRecorder()
 		h.handleRenameList(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -302,26 +299,26 @@ func TestPrivateHandler_RenameList(t *testing.T) {
 
 func TestPrivateHandler_DeleteList(t *testing.T) {
 	t.Run("returns 204", func(t *testing.T) {
-		m := newFakeListManager(&domain.MailingList{ID: 1, Name: "bye"})
+		m := newFakeListManager(&domain.MailingList{Name: "bye"})
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodDelete, "/lists/1", nil)
-		req.SetPathValue("id", "1")
+		req := httptest.NewRequest(http.MethodDelete, "/lists/bye", nil)
+		req.SetPathValue("name", "bye")
 		w := httptest.NewRecorder()
 		h.handleDeleteList(w, req)
 		if w.Code != http.StatusNoContent {
 			t.Errorf("expected 204, got %d", w.Code)
 		}
-		if _, exists := m.lists[1]; exists {
+		if _, exists := m.lists["bye"]; exists {
 			t.Error("list should have been deleted")
 		}
 	})
 
 	t.Run("returns 500 on service error", func(t *testing.T) {
-		m := newFakeListManager(&domain.MailingList{ID: 1, Name: "bye"})
+		m := newFakeListManager(&domain.MailingList{Name: "bye"})
 		m.deleteErr = errors.New("db down")
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodDelete, "/lists/1", nil)
-		req.SetPathValue("id", "1")
+		req := httptest.NewRequest(http.MethodDelete, "/lists/bye", nil)
+		req.SetPathValue("name", "bye")
 		w := httptest.NewRecorder()
 		h.handleDeleteList(w, req)
 		if w.Code != http.StatusInternalServerError {
@@ -332,17 +329,17 @@ func TestPrivateHandler_DeleteList(t *testing.T) {
 
 func TestPrivateHandler_ListUsers(t *testing.T) {
 	now := time.Now()
-	list := &domain.MailingList{ID: 1, Name: "weekly"}
+	list := &domain.MailingList{Name: "weekly"}
 
 	t.Run("returns all users with confirmed flag", func(t *testing.T) {
 		m := newFakeListManager(list)
 		m.users = []*domain.User{
-			{ID: 1, MailingListID: 1, Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
-			{ID: 2, MailingListID: 1, Name: "Bob", Email: "b@test.com"},
+			{ID: 1, MailingListName: "weekly", Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
+			{ID: 2, MailingListName: "weekly", Name: "Bob", Email: "b@test.com"},
 		}
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodGet, "/lists/1/users", nil)
-		req.SetPathValue("id", "1")
+		req := httptest.NewRequest(http.MethodGet, "/lists/weekly/users", nil)
+		req.SetPathValue("name", "weekly")
 		w := httptest.NewRecorder()
 		h.handleListUsers(w, req)
 
@@ -366,8 +363,8 @@ func TestPrivateHandler_ListUsers(t *testing.T) {
 		m := newFakeListManager(list)
 		m.usersErr = errors.New("db down")
 		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
-		req := httptest.NewRequest(http.MethodGet, "/lists/1/users", nil)
-		req.SetPathValue("id", "1")
+		req := httptest.NewRequest(http.MethodGet, "/lists/weekly/users", nil)
+		req.SetPathValue("name", "weekly")
 		w := httptest.NewRecorder()
 		h.handleListUsers(w, req)
 		if w.Code != http.StatusInternalServerError {
@@ -506,9 +503,9 @@ func TestPrivateClient_Integration(t *testing.T) {
 	}
 
 	now := time.Now()
-	m := newFakeListManager(&domain.MailingList{ID: 1, Name: "weekly"})
+	m := newFakeListManager(&domain.MailingList{Name: "weekly"})
 	m.users = []*domain.User{
-		{ID: 1, MailingListID: 1, Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
+		{ID: 1, MailingListName: "weekly", Name: "Alice", Email: "a@test.com", ConfirmedAt: &now},
 	}
 	mail := &fakeMailDispatcher{}
 
@@ -529,7 +526,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	})
 
 	t.Run("GetList", func(t *testing.T) {
-		resp, err := client.GetList(ctx, 1)
+		resp, err := client.GetList(ctx, "weekly")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -542,7 +539,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	})
 
 	t.Run("GetUsers", func(t *testing.T) {
-		users, err := client.GetUsers(ctx, 1)
+		users, err := client.GetUsers(ctx, "weekly")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -570,7 +567,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	})
 
 	t.Run("RenameList", func(t *testing.T) {
-		resp, err := client.RenameList(ctx, 1, "renamed")
+		resp, err := client.RenameList(ctx, "weekly", "renamed")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -581,16 +578,10 @@ func TestPrivateClient_Integration(t *testing.T) {
 
 	t.Run("DeleteList", func(t *testing.T) {
 		_, _ = client.CreateList(ctx, "todelete")
-		var deleteID uint
-		for id := range m.lists {
-			if m.lists[id].Name == "todelete" {
-				deleteID = id
-			}
-		}
-		if err := client.DeleteList(ctx, deleteID); err != nil {
+		if err := client.DeleteList(ctx, "todelete"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if _, exists := m.lists[deleteID]; exists {
+		if _, exists := m.lists["todelete"]; exists {
 			t.Error("list should have been deleted")
 		}
 	})

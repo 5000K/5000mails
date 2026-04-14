@@ -36,39 +36,39 @@ func TestListService_Create(t *testing.T) {
 }
 
 func TestListService_Get(t *testing.T) {
-	list := &domain.MailingList{ID: 1, Name: "weekly"}
+	list := &domain.MailingList{Name: "weekly"}
 
-	t.Run("returns list by ID", func(t *testing.T) {
+	t.Run("returns list by name", func(t *testing.T) {
 		svc := NewListService(newFakeListRepo(list), newFakeUserRepo())
-		got, err := svc.Get(context.Background(), 1)
+		got, err := svc.Get(context.Background(), "weekly")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got.ID != list.ID || got.Name != list.Name {
+		if got.Name != list.Name {
 			t.Errorf("got %+v, want %+v", got, list)
 		}
 	})
 
 	t.Run("wraps repo error", func(t *testing.T) {
 		repo := newFakeListRepo()
-		repo.getErr = errors.New("not found")
+		repo.getByNameErr = errors.New("not found")
 		svc := NewListService(repo, newFakeUserRepo())
-		_, err := svc.Get(context.Background(), 99)
+		_, err := svc.Get(context.Background(), "ghost")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !errors.Is(err, repo.getErr) {
+		if !errors.Is(err, repo.getByNameErr) {
 			t.Errorf("expected wrapped repo error, got: %v", err)
 		}
 	})
 }
 
 func TestListService_GetByName(t *testing.T) {
-	list := &domain.MailingList{ID: 2, Name: "monthly"}
+	list := &domain.MailingList{Name: "monthly"}
 
 	t.Run("returns list by name", func(t *testing.T) {
 		svc := NewListService(newFakeListRepo(list), newFakeUserRepo())
-		got, err := svc.GetByName(context.Background(), "monthly")
+		got, err := svc.Get(context.Background(), "monthly")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -81,7 +81,7 @@ func TestListService_GetByName(t *testing.T) {
 		repo := newFakeListRepo()
 		repo.getByNameErr = errors.New("not found")
 		svc := NewListService(repo, newFakeUserRepo())
-		_, err := svc.GetByName(context.Background(), "ghost")
+		_, err := svc.Get(context.Background(), "ghost")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -92,11 +92,11 @@ func TestListService_GetByName(t *testing.T) {
 }
 
 func TestListService_Rename(t *testing.T) {
-	list := &domain.MailingList{ID: 3, Name: "old-name"}
+	list := &domain.MailingList{Name: "old-name"}
 
 	t.Run("updates list name", func(t *testing.T) {
 		svc := NewListService(newFakeListRepo(list), newFakeUserRepo())
-		got, err := svc.Rename(context.Background(), 3, "new-name")
+		got, err := svc.Rename(context.Background(), "old-name", "new-name")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -109,7 +109,7 @@ func TestListService_Rename(t *testing.T) {
 		repo := newFakeListRepo()
 		repo.updateErr = errors.New("update failed")
 		svc := NewListService(repo, newFakeUserRepo())
-		_, err := svc.Rename(context.Background(), 3, "new-name")
+		_, err := svc.Rename(context.Background(), "old-name", "new-name")
 		if !errors.Is(err, repo.updateErr) {
 			t.Errorf("expected wrapped repo error, got: %v", err)
 		}
@@ -117,15 +117,15 @@ func TestListService_Rename(t *testing.T) {
 }
 
 func TestListService_Delete(t *testing.T) {
-	list := &domain.MailingList{ID: 4, Name: "doomed"}
+	list := &domain.MailingList{Name: "doomed"}
 
 	t.Run("deletes list", func(t *testing.T) {
 		repo := newFakeListRepo(list)
 		svc := NewListService(repo, newFakeUserRepo())
-		if err := svc.Delete(context.Background(), 4); err != nil {
+		if err := svc.Delete(context.Background(), "doomed"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if _, exists := repo.lists[4]; exists {
+		if _, exists := repo.lists["doomed"]; exists {
 			t.Error("expected list to be deleted")
 		}
 	})
@@ -134,7 +134,7 @@ func TestListService_Delete(t *testing.T) {
 		repo := newFakeListRepo()
 		repo.deleteErr = errors.New("delete failed")
 		svc := NewListService(repo, newFakeUserRepo())
-		err := svc.Delete(context.Background(), 4)
+		err := svc.Delete(context.Background(), "doomed")
 		if !errors.Is(err, repo.deleteErr) {
 			t.Errorf("expected wrapped repo error, got: %v", err)
 		}
@@ -144,14 +144,14 @@ func TestListService_Delete(t *testing.T) {
 func TestListService_CountUsers(t *testing.T) {
 	now := time.Now()
 	users := []*domain.User{
-		{ID: 1, MailingListID: 10, Email: "a@example.com", ConfirmedAt: &now},
-		{ID: 2, MailingListID: 10, Email: "b@example.com", ConfirmedAt: nil},
-		{ID: 3, MailingListID: 10, Email: "c@example.com", ConfirmedAt: &now},
+		{ID: 1, MailingListName: "weekly", Email: "a@example.com", ConfirmedAt: &now},
+		{ID: 2, MailingListName: "weekly", Email: "b@example.com", ConfirmedAt: nil},
+		{ID: 3, MailingListName: "weekly", Email: "c@example.com", ConfirmedAt: &now},
 	}
 
 	t.Run("counts total and confirmed users", func(t *testing.T) {
 		svc := NewListService(newFakeListRepo(), newFakeUserRepo(users...))
-		counts, err := svc.CountUsers(context.Background(), 10)
+		counts, err := svc.CountUsers(context.Background(), "weekly")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -167,7 +167,7 @@ func TestListService_CountUsers(t *testing.T) {
 		repo := newFakeUserRepo()
 		repo.getUsersErr = errors.New("db down")
 		svc := NewListService(newFakeListRepo(), repo)
-		_, err := svc.CountUsers(context.Background(), 10)
+		_, err := svc.CountUsers(context.Background(), "weekly")
 		if !errors.Is(err, repo.getUsersErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestListService_CountUsers(t *testing.T) {
 		repo := newFakeUserRepo(users...)
 		repo.getConfirmedErr = errors.New("confirmed query failed")
 		svc := NewListService(newFakeListRepo(), repo)
-		_, err := svc.CountUsers(context.Background(), 10)
+		_, err := svc.CountUsers(context.Background(), "weekly")
 		if !errors.Is(err, repo.getConfirmedErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
 		}

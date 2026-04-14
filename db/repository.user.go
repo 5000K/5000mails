@@ -9,18 +9,18 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-func (r *MailingListRepository) AddUser(ctx context.Context, mailingListID uint, name, email, unsubscribeToken string) (*domain.User, error) {
+func (r *MailingListRepository) AddUser(ctx context.Context, mailingListName string, name, email, unsubscribeToken string) (*domain.User, error) {
 	user := &User{
 		Name:             name,
 		Email:            email,
-		MailingListID:    mailingListID,
+		MailingListName:  mailingListName,
 		UnsubscribeToken: unsubscribeToken,
 	}
 
 	result := r.db.WithContext(ctx).Create(user)
 	if result.Error != nil {
 		r.logger.ErrorContext(ctx, "failed to add user to mailing list",
-			slog.Uint64("mailing_list_id", uint64(mailingListID)),
+			slog.String("mailing_list_name", mailingListName),
 			slog.String("email", email),
 			slog.Any("error", result.Error),
 		)
@@ -28,7 +28,7 @@ func (r *MailingListRepository) AddUser(ctx context.Context, mailingListID uint,
 	}
 
 	r.logger.InfoContext(ctx, "added user to mailing list",
-		slog.Uint64("mailing_list_id", uint64(mailingListID)),
+		slog.String("mailing_list_name", mailingListName),
 		slog.Uint64("user_id", uint64(user.ID)),
 		slog.String("email", email),
 	)
@@ -79,23 +79,23 @@ func (r *MailingListRepository) GetUserByUnsubscribeToken(ctx context.Context, t
 	return ToDomainUser(&user), nil
 }
 
-func (r *MailingListRepository) GetConfirmedUsers(ctx context.Context, mailingListID uint) ([]domain.User, error) {
+func (r *MailingListRepository) GetConfirmedUsers(ctx context.Context, mailingListName string) ([]domain.User, error) {
 	var users []User
 
 	result := r.db.WithContext(ctx).
-		Where("mailing_list_id = ? AND confirmed_at IS NOT NULL", mailingListID).
+		Where("mailing_list_name = ? AND confirmed_at IS NOT NULL", mailingListName).
 		Find(&users)
 
 	if result.Error != nil {
 		r.logger.ErrorContext(ctx, "failed to get confirmed users",
-			slog.Uint64("mailing_list_id", uint64(mailingListID)),
+			slog.String("mailing_list_name", mailingListName),
 			slog.Any("error", result.Error),
 		)
 		return nil, fmt.Errorf("get confirmed users: %w", result.Error)
 	}
 
 	r.logger.InfoContext(ctx, "fetched confirmed users",
-		slog.Uint64("mailing_list_id", uint64(mailingListID)),
+		slog.String("mailing_list_name", mailingListName),
 		slog.Int("count", len(users)),
 	)
 	return ToDomainUsers(users), nil
@@ -121,20 +121,20 @@ func (r *MailingListRepository) RemoveUser(ctx context.Context, userID uint) err
 	return nil
 }
 
-func (r *MailingListRepository) GetUsers(ctx context.Context, mailingListID uint) ([]domain.User, error) {
+func (r *MailingListRepository) GetUsers(ctx context.Context, mailingListName string) ([]domain.User, error) {
 	var users []User
 
-	result := r.db.WithContext(ctx).Where("mailing_list_id = ?", mailingListID).Find(&users)
+	result := r.db.WithContext(ctx).Where("mailing_list_name = ?", mailingListName).Find(&users)
 	if result.Error != nil {
 		r.logger.ErrorContext(ctx, "failed to get users",
-			slog.Uint64("mailing_list_id", uint64(mailingListID)),
+			slog.String("mailing_list_name", mailingListName),
 			slog.Any("error", result.Error),
 		)
 		return nil, fmt.Errorf("get users: %w", result.Error)
 	}
 
 	r.logger.InfoContext(ctx, "fetched users",
-		slog.Uint64("mailing_list_id", uint64(mailingListID)),
+		slog.String("mailing_list_name", mailingListName),
 		slog.Int("count", len(users)),
 	)
 	return ToDomainUsers(users), nil
