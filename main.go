@@ -72,7 +72,7 @@ func main() {
 
 	subscriptionSvc := service.NewSubscriptionService(repo, repo, repo, rndr, sender, string(confirmRaw), cfg.BaseURL)
 	listSvc := service.NewListService(repo, repo)
-	mailSvc := service.NewMailService(repo, repo, rndr, sender)
+	mailSvc := service.NewMailService(repo, repo, rndr, sender, cfg.BaseURL)
 
 	publicHandler := api.NewPublicHandler(subscriptionSvc, api.RedirectPages{
 		SubscribeSuccess:   cfg.Redirects.SubscribeSuccess,

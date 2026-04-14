@@ -25,6 +25,7 @@ func TestMailService_SendToList(t *testing.T) {
 			newFakeUserRepo(),
 			&fakeRenderer{metadata: metadata, body: "body"},
 			sender,
+			"https://example.com",
 		)
 		if err := svc.SendToList(context.Background(), "weekly", "# Hi", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -40,7 +41,7 @@ func TestMailService_SendToList(t *testing.T) {
 			confirmedUser(2, "weekly", "bob@example.com"),
 		)
 		sender := &fakeSender{}
-		svc := NewMailService(newFakeListRepo(list), users, &fakeRenderer{metadata: metadata, body: "rendered"}, sender)
+		svc := NewMailService(newFakeListRepo(list), users, &fakeRenderer{metadata: metadata, body: "rendered"}, sender, "https://example.com")
 
 		if err := svc.SendToList(context.Background(), "weekly", "# Hi", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -66,7 +67,7 @@ func TestMailService_SendToList(t *testing.T) {
 	t.Run("injects Recipient into render data per recipient", func(t *testing.T) {
 		user := confirmedUser(1, "weekly", "alice@example.com")
 		renderer := &fakeRenderer{metadata: metadata, body: "body"}
-		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), renderer, &fakeSender{})
+		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), renderer, &fakeSender{}, "https://example.com")
 
 		if err := svc.SendToList(context.Background(), "weekly", "raw", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -80,10 +81,25 @@ func TestMailService_SendToList(t *testing.T) {
 		}
 	})
 
+	t.Run("injects unsubscribeURL into render data per recipient", func(t *testing.T) {
+		user := confirmedUser(1, "weekly", "alice@example.com")
+		user.UnsubscribeToken = "unsub-tok"
+		renderer := &fakeRenderer{metadata: metadata, body: "body"}
+		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), renderer, &fakeSender{}, "https://example.com")
+
+		if err := svc.SendToList(context.Background(), "weekly", "raw", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		wantURL := "https://example.com/unsubscribe/unsub-tok"
+		if got, _ := renderer.lastData["unsubscribeURL"].(string); got != wantURL {
+			t.Errorf("unsubscribeURL = %q, want %q", got, wantURL)
+		}
+	})
+
 	t.Run("wraps GetListByName error", func(t *testing.T) {
 		listRepo := newFakeListRepo()
 		listRepo.getByNameErr = errors.New("list missing")
-		svc := NewMailService(listRepo, newFakeUserRepo(), &fakeRenderer{}, &fakeSender{})
+		svc := NewMailService(listRepo, newFakeUserRepo(), &fakeRenderer{}, &fakeSender{}, "https://example.com")
 		err := svc.SendToList(context.Background(), "ghost", "raw", nil)
 		if !errors.Is(err, listRepo.getByNameErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
@@ -93,7 +109,7 @@ func TestMailService_SendToList(t *testing.T) {
 	t.Run("wraps GetConfirmedUsers error", func(t *testing.T) {
 		userRepo := newFakeUserRepo()
 		userRepo.getConfirmedErr = errors.New("db down")
-		svc := NewMailService(newFakeListRepo(list), userRepo, &fakeRenderer{}, &fakeSender{})
+		svc := NewMailService(newFakeListRepo(list), userRepo, &fakeRenderer{}, &fakeSender{}, "https://example.com")
 		err := svc.SendToList(context.Background(), "weekly", "raw", nil)
 		if !errors.Is(err, userRepo.getConfirmedErr) {
 			t.Errorf("expected wrapped error, got: %v", err)
@@ -107,6 +123,7 @@ func TestMailService_SendToList(t *testing.T) {
 			newFakeUserRepo(confirmedUser(1, "weekly", "a@example.com")),
 			&fakeRenderer{err: renderErr},
 			&fakeSender{},
+			"https://example.com",
 		)
 		err := svc.SendToList(context.Background(), "weekly", "raw", nil)
 		if !errors.Is(err, renderErr) {
@@ -121,6 +138,7 @@ func TestMailService_SendToList(t *testing.T) {
 			newFakeUserRepo(confirmedUser(1, "weekly", "a@example.com")),
 			&fakeRenderer{metadata: metadata, body: "body"},
 			&fakeSender{err: sendErr},
+			"https://example.com",
 		)
 		err := svc.SendToList(context.Background(), "weekly", "raw", nil)
 		if !errors.Is(err, sendErr) {
@@ -135,7 +153,7 @@ func TestMailService_SendTestMail(t *testing.T) {
 
 	t.Run("renders and sends to given recipient", func(t *testing.T) {
 		sender := &fakeSender{}
-		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), &fakeRenderer{metadata: metadata, body: "preview"}, sender)
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), &fakeRenderer{metadata: metadata, body: "preview"}, sender, "https://example.com")
 
 		if err := svc.SendTestMail(context.Background(), recipient, "# Draft", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -154,7 +172,7 @@ func TestMailService_SendTestMail(t *testing.T) {
 
 	t.Run("injects Recipient into render data", func(t *testing.T) {
 		renderer := &fakeRenderer{metadata: metadata, body: "body"}
-		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), renderer, &fakeSender{})
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), renderer, &fakeSender{}, "https://example.com")
 
 		if err := svc.SendTestMail(context.Background(), recipient, "# Draft", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -168,9 +186,23 @@ func TestMailService_SendTestMail(t *testing.T) {
 		}
 	})
 
+	t.Run("injects unsubscribeURL into render data", func(t *testing.T) {
+		recipientWithToken := domain.User{ID: 1, Email: "dev@example.com", Name: "Dev", UnsubscribeToken: "my-unsub-tok"}
+		renderer := &fakeRenderer{metadata: metadata, body: "body"}
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), renderer, &fakeSender{}, "https://example.com")
+
+		if err := svc.SendTestMail(context.Background(), recipientWithToken, "# Draft", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		wantURL := "https://example.com/unsubscribe/my-unsub-tok"
+		if got, _ := renderer.lastData["unsubscribeURL"].(string); got != wantURL {
+			t.Errorf("unsubscribeURL = %q, want %q", got, wantURL)
+		}
+	})
+
 	t.Run("wraps renderer error", func(t *testing.T) {
 		renderErr := errors.New("bad template")
-		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), &fakeRenderer{err: renderErr}, &fakeSender{})
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), &fakeRenderer{err: renderErr}, &fakeSender{}, "https://example.com")
 		err := svc.SendTestMail(context.Background(), recipient, "# Draft", nil)
 		if !errors.Is(err, renderErr) {
 			t.Errorf("expected wrapped render error, got: %v", err)
@@ -184,6 +216,7 @@ func TestMailService_SendTestMail(t *testing.T) {
 			newFakeUserRepo(),
 			&fakeRenderer{metadata: metadata, body: "body"},
 			&fakeSender{err: sendErr},
+			"https://example.com",
 		)
 		err := svc.SendTestMail(context.Background(), recipient, "# Draft", nil)
 		if !errors.Is(err, sendErr) {
