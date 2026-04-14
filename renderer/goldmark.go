@@ -47,7 +47,7 @@ func (r *GoldmarkRenderer) Render(raw *string, data map[string]any) (domain.Mail
 		return domain.MailMetadata{}, "", fmt.Errorf("templating markdown content: %w", err)
 	}
 
-	metadata, markdownBody, err := parseFrontmatter(templated)
+	metadata, rawFM, markdownBody, err := parseFrontmatter(templated)
 	if err != nil {
 		return domain.MailMetadata{}, "", fmt.Errorf("parsing frontmatter: %w", err)
 	}
@@ -58,9 +58,10 @@ func (r *GoldmarkRenderer) Render(raw *string, data map[string]any) (domain.Mail
 	}
 
 	layoutData := mergeData(data, map[string]any{
-		"html":     htmlBuf.String(),
-		"metadata": metadata,
-		"theme":    r.theme,
+		"html":        htmlBuf.String(),
+		"metadata":    metadata,
+		"frontmatter": rawFM,
+		"theme":       r.theme,
 	})
 
 	var finalBuf bytes.Buffer
@@ -89,10 +90,10 @@ type frontmatterFields struct {
 	Sender  string `yaml:"sender"`
 }
 
-func parseFrontmatter(s string) (domain.MailMetadata, string, error) {
+func parseFrontmatter(s string) (domain.MailMetadata, map[string]any, string, error) {
 	const marker = "---"
 	if !strings.HasPrefix(s, marker) {
-		return domain.MailMetadata{}, s, nil
+		return domain.MailMetadata{}, nil, s, nil
 	}
 
 	after := strings.TrimPrefix(s, marker)
@@ -101,7 +102,7 @@ func parseFrontmatter(s string) (domain.MailMetadata, string, error) {
 
 	end := strings.Index(after, "\n---")
 	if end == -1 {
-		return domain.MailMetadata{}, "", fmt.Errorf("frontmatter opening marker has no closing marker")
+		return domain.MailMetadata{}, nil, "", fmt.Errorf("frontmatter opening marker has no closing marker")
 	}
 
 	yamlSrc := after[:end]
@@ -111,10 +112,15 @@ func parseFrontmatter(s string) (domain.MailMetadata, string, error) {
 
 	var fm frontmatterFields
 	if err := yaml.Unmarshal([]byte(yamlSrc), &fm); err != nil {
-		return domain.MailMetadata{}, "", fmt.Errorf("parsing frontmatter yaml: %w", err)
+		return domain.MailMetadata{}, nil, "", fmt.Errorf("parsing frontmatter yaml: %w", err)
 	}
 
-	return domain.MailMetadata{Subject: fm.Subject, SenderName: fm.Sender}, body, nil
+	var rawFM map[string]any
+	if err := yaml.Unmarshal([]byte(yamlSrc), &rawFM); err != nil {
+		return domain.MailMetadata{}, nil, "", fmt.Errorf("parsing frontmatter yaml: %w", err)
+	}
+
+	return domain.MailMetadata{Subject: fm.Subject, SenderName: fm.Sender}, rawFM, body, nil
 }
 
 func mergeData(base, extra map[string]any) map[string]any {

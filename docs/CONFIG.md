@@ -76,13 +76,7 @@ All values accept a local path **or** an `http(s)://` URL. Remote resources are 
 | `theme`        | `THEME_PATH`           | `https://github.com/5000K/5000mails/releases/latest/download/theme.example.css`       | CSS injected into the HTML template                         |
 | `confirm-mail` | `CONFIRM_MAIL_PATH`    | `https://github.com/5000K/5000mails/releases/latest/download/confirm.md`              | Markdown template for the double opt-in confirmation email  |
 
-The `confirm-mail` template receives the following template variables:
-
-| Variable          | Value                                        |
-|-------------------|----------------------------------------------|
-| `ConfirmationURL` | Full URL the subscriber must visit to confirm |
-| `Name`            | Subscriber display name                      |
-| `Email`           | Subscriber email address                     |
+See [docs/TEMPLATE.md](TEMPLATE.md) for a full reference of template variables available in the `confirm-mail` template and all other mail contexts.
 
 ---
 

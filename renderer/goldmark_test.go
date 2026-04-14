@@ -25,7 +25,7 @@ func newRenderer(t *testing.T) *GoldmarkRenderer {
 
 func TestParseFrontmatter_ValidBlock(t *testing.T) {
 	input := "---\nsubject: \"Hello\"\nsender: \"Bot\"\n---\n# Body"
-	meta, body, err := parseFrontmatter(input)
+	meta, rawFM, body, err := parseFrontmatter(input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,16 +38,25 @@ func TestParseFrontmatter_ValidBlock(t *testing.T) {
 	if !strings.HasPrefix(body, "# Body") {
 		t.Errorf("unexpected body: %q", body)
 	}
+	if rawFM["subject"] != "Hello" {
+		t.Errorf("expected rawFM[subject] = %q, got %v", "Hello", rawFM["subject"])
+	}
+	if rawFM["sender"] != "Bot" {
+		t.Errorf("expected rawFM[sender] = %q, got %v", "Bot", rawFM["sender"])
+	}
 }
 
 func TestParseFrontmatter_NoFrontmatter(t *testing.T) {
 	input := "# Just markdown"
-	meta, body, err := parseFrontmatter(input)
+	meta, rawFM, body, err := parseFrontmatter(input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if meta != (domain.MailMetadata{}) {
 		t.Errorf("expected empty metadata, got %+v", meta)
+	}
+	if rawFM != nil {
+		t.Errorf("expected nil rawFM for no frontmatter, got %v", rawFM)
 	}
 	if body != input {
 		t.Errorf("expected body to equal input, got %q", body)
@@ -56,7 +65,7 @@ func TestParseFrontmatter_NoFrontmatter(t *testing.T) {
 
 func TestParseFrontmatter_UnclosedMarkerErrors(t *testing.T) {
 	input := "---\nsubject: oops\n"
-	_, _, err := parseFrontmatter(input)
+	_, _, _, err := parseFrontmatter(input)
 	if err == nil {
 		t.Fatal("expected error for unclosed frontmatter, got nil")
 	}
@@ -64,7 +73,7 @@ func TestParseFrontmatter_UnclosedMarkerErrors(t *testing.T) {
 
 func TestParseFrontmatter_InvalidYAMLErrors(t *testing.T) {
 	input := "---\n: bad: yaml: [\n---\n# body"
-	_, _, err := parseFrontmatter(input)
+	_, _, _, err := parseFrontmatter(input)
 	if err == nil {
 		t.Fatal("expected error for invalid YAML, got nil")
 	}
@@ -156,6 +165,22 @@ func TestRender_ThemeInjectedIntoLayout(t *testing.T) {
 	}
 	if !strings.Contains(body, "<style>body{color:red}</style>") {
 		t.Errorf("expected theme in layout output, got:\n%s", body)
+	}
+}
+
+func TestRender_FrontmatterInjectedIntoLayout(t *testing.T) {
+	layout := `{{.frontmatter.subject}} / {{.frontmatter.custom}}: {{.html}}`
+	r, err := NewGoldmarkRenderer([]byte(layout), nil, slog.Default())
+	if err != nil {
+		t.Fatalf("NewGoldmarkRenderer: %v", err)
+	}
+	raw := "---\nsubject: Weekly\nsender: Bot\ncustom: extra\n---\nhi"
+	_, body, err := r.Render(&raw, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(body, "Weekly / extra:") {
+		t.Errorf("expected frontmatter fields in layout output, got:\n%s", body)
 	}
 }
 
