@@ -74,7 +74,14 @@ func main() {
 	listSvc := service.NewListService(repo, repo)
 	mailSvc := service.NewMailService(repo, repo, rndr, sender)
 
-	publicHandler := api.NewPublicHandler(subscriptionSvc, logger)
+	publicHandler := api.NewPublicHandler(subscriptionSvc, api.RedirectPages{
+		SubscribeSuccess:   cfg.Redirects.SubscribeSuccess,
+		SubscribeError:     cfg.Redirects.SubscribeError,
+		ConfirmSuccess:     cfg.Redirects.ConfirmSuccess,
+		ConfirmError:       cfg.Redirects.ConfirmError,
+		UnsubscribeSuccess: cfg.Redirects.UnsubscribeSuccess,
+		UnsubscribeError:   cfg.Redirects.UnsubscribeError,
+	}, logger)
 
 	var publicKey ed25519.PublicKey
 	if cfg.Auth.PublicKeyPath != "" {

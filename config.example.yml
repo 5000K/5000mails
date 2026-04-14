@@ -22,3 +22,11 @@ paths:
   template: "./static/template.html"   # HTML wrapper rendered around markdown content
   theme: "./static/theme.example.css"          # CSS injected into the template
   confirm-mail: "./static/confirm.md"  # markdown template for the double opt-in email
+
+redirects:
+  subscribe-success: ""   # https://yoursite.com/subscribed
+  subscribe-error: ""     # https://yoursite.com/subscribe-failed
+  confirm-success: ""     # https://yoursite.com/confirmed
+  confirm-error: ""       # https://yoursite.com/confirm-failed
+  unsubscribe-success: "" # https://yoursite.com/unsubscribed
+  unsubscribe-error: ""   # https://yoursite.com/unsubscribe-failed

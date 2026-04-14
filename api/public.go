@@ -17,13 +17,23 @@ type Subscriber interface {
 	Unsubscribe(ctx context.Context, unsubscribeToken string) error
 }
 
+type RedirectPages struct {
+	SubscribeSuccess   string
+	SubscribeError     string
+	ConfirmSuccess     string
+	ConfirmError       string
+	UnsubscribeSuccess string
+	UnsubscribeError   string
+}
+
 type PublicHandler struct {
 	subscriptions Subscriber
+	redirects     RedirectPages
 	logger        *slog.Logger
 }
 
-func NewPublicHandler(subscriptions Subscriber, logger *slog.Logger) *PublicHandler {
-	return &PublicHandler{subscriptions: subscriptions, logger: logger}
+func NewPublicHandler(subscriptions Subscriber, redirects RedirectPages, logger *slog.Logger) *PublicHandler {
+	return &PublicHandler{subscriptions: subscriptions, redirects: redirects, logger: logger}
 }
 
 func (h *PublicHandler) Routes() *http.ServeMux {
@@ -39,7 +49,7 @@ func (h *PublicHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) 
 
 	name, email, err := parseSubscribeBody(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		redirectOrError(w, r, h.redirects.SubscribeError, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -49,11 +59,11 @@ func (h *PublicHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) 
 			slog.String("email", email),
 			slog.Any("error", err),
 		)
-		writeError(w, http.StatusInternalServerError, "subscription failed")
+		redirectOrError(w, r, h.redirects.SubscribeError, http.StatusInternalServerError, "subscription failed")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "check your email for a confirmation link"})
+	redirectOrJSON(w, r, h.redirects.SubscribeSuccess, http.StatusAccepted, map[string]string{"message": "check your email for a confirmation link"})
 }
 
 func (h *PublicHandler) handleConfirm(w http.ResponseWriter, r *http.Request) {
@@ -64,11 +74,11 @@ func (h *PublicHandler) handleConfirm(w http.ResponseWriter, r *http.Request) {
 			slog.String("token", token),
 			slog.Any("error", err),
 		)
-		writeError(w, http.StatusBadRequest, "invalid or expired confirmation token")
+		redirectOrError(w, r, h.redirects.ConfirmError, http.StatusBadRequest, "invalid or expired confirmation token")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "your subscription has been confirmed"})
+	redirectOrJSON(w, r, h.redirects.ConfirmSuccess, http.StatusOK, map[string]string{"message": "your subscription has been confirmed"})
 }
 
 func (h *PublicHandler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
@@ -79,11 +89,27 @@ func (h *PublicHandler) handleUnsubscribe(w http.ResponseWriter, r *http.Request
 			slog.String("token", token),
 			slog.Any("error", err),
 		)
-		writeError(w, http.StatusBadRequest, "invalid or expired unsubscribe token")
+		redirectOrError(w, r, h.redirects.UnsubscribeError, http.StatusBadRequest, "invalid or expired unsubscribe token")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "you have been unsubscribed"})
+	redirectOrJSON(w, r, h.redirects.UnsubscribeSuccess, http.StatusOK, map[string]string{"message": "you have been unsubscribed"})
+}
+
+func redirectOrJSON(w http.ResponseWriter, r *http.Request, redirectURL string, status int, v any) {
+	if redirectURL != "" {
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	writeJSON(w, status, v)
+}
+
+func redirectOrError(w http.ResponseWriter, r *http.Request, redirectURL string, status int, msg string) {
+	if redirectURL != "" {
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	writeError(w, status, msg)
 }
 
 func parseSubscribeBody(r *http.Request) (name, email string, err error) {
