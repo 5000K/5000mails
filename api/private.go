@@ -19,12 +19,13 @@ import (
 
 // ListManager is the private API's view of the list service.
 type ListManager interface {
+	All(ctx context.Context) ([]domain.MailingList, error)
 	Create(ctx context.Context, name string) (*domain.MailingList, error)
-	Get(ctx context.Context, id uint) (*domain.MailingList, error)
-	Rename(ctx context.Context, id uint, newName string) (*domain.MailingList, error)
-	Delete(ctx context.Context, id uint) error
-	CountUsers(ctx context.Context, listID uint) (domain.UserCounts, error)
-	Users(ctx context.Context, listID uint) ([]domain.User, error)
+	Get(ctx context.Context, name string) (*domain.MailingList, error)
+	Rename(ctx context.Context, name, newName string) (*domain.MailingList, error)
+	Delete(ctx context.Context, name string) error
+	CountUsers(ctx context.Context, listName string) (domain.UserCounts, error)
+	Users(ctx context.Context, listName string) ([]domain.User, error)
 }
 
 // MailDispatcher is the private API's view of the mail service.
@@ -51,11 +52,12 @@ func NewPrivateHandler(lists ListManager, mail MailDispatcher, publicKey ed25519
 // Routes returns the mux for all private API endpoints.
 func (h *PrivateHandler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.Handle("GET /lists", h.auth(h.handleAllLists))
 	mux.Handle("POST /lists", h.auth(h.handleCreateList))
-	mux.Handle("GET /lists/{id}", h.auth(h.handleGetList))
-	mux.Handle("PUT /lists/{id}", h.auth(h.handleRenameList))
-	mux.Handle("DELETE /lists/{id}", h.auth(h.handleDeleteList))
-	mux.Handle("GET /lists/{id}/users", h.auth(h.handleListUsers))
+	mux.Handle("GET /lists/{name}", h.auth(h.handleGetList))
+	mux.Handle("PUT /lists/{name}", h.auth(h.handleRenameList))
+	mux.Handle("DELETE /lists/{name}", h.auth(h.handleDeleteList))
+	mux.Handle("GET /lists/{name}/users", h.auth(h.handleListUsers))
 	mux.Handle("POST /lists/{name}/send", h.auth(h.handleSendToList))
 	mux.Handle("POST /mail/test", h.auth(h.handleSendTestMail))
 	return mux
@@ -64,12 +66,10 @@ func (h *PrivateHandler) Routes() *http.ServeMux {
 // --- request/response types ---
 
 type listResponse struct {
-	ID   uint   `json:"id"`
 	Name string `json:"name"`
 }
 
 type listDetailResponse struct {
-	ID          uint   `json:"id"`
 	Name        string `json:"name"`
 	Subscribers struct {
 		Total     int `json:"total"`
@@ -100,6 +100,20 @@ type testMailRequest struct {
 
 // --- handlers ---
 
+func (h *PrivateHandler) handleAllLists(w http.ResponseWriter, r *http.Request) {
+	lists, err := h.lists.All(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "get all lists failed", slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to load lists")
+		return
+	}
+	resp := make([]listResponse, len(lists))
+	for i, l := range lists {
+		resp[i] = listResponse{Name: l.Name}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *PrivateHandler) handleCreateList(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
@@ -116,40 +130,34 @@ func (h *PrivateHandler) handleCreateList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, listResponse{ID: list.ID, Name: list.Name})
+	writeJSON(w, http.StatusCreated, listResponse{Name: list.Name})
 }
 
 func (h *PrivateHandler) handleGetList(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUintPath(w, r, "id")
-	if !ok {
-		return
-	}
+	name := r.PathValue("name")
 
-	list, err := h.lists.Get(r.Context(), id)
+	list, err := h.lists.Get(r.Context(), name)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "get list failed", slog.Uint64("id", uint64(id)), slog.Any("error", err))
+		h.logger.ErrorContext(r.Context(), "get list failed", slog.String("name", name), slog.Any("error", err))
 		writeError(w, http.StatusNotFound, "list not found")
 		return
 	}
 
-	counts, err := h.lists.CountUsers(r.Context(), id)
+	counts, err := h.lists.CountUsers(r.Context(), name)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "count users failed", slog.Uint64("id", uint64(id)), slog.Any("error", err))
+		h.logger.ErrorContext(r.Context(), "count users failed", slog.String("name", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to load list stats")
 		return
 	}
 
-	resp := listDetailResponse{ID: list.ID, Name: list.Name}
+	resp := listDetailResponse{Name: list.Name}
 	resp.Subscribers.Total = counts.Total
 	resp.Subscribers.Confirmed = counts.Confirmed
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *PrivateHandler) handleRenameList(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUintPath(w, r, "id")
-	if !ok {
-		return
-	}
+	name := r.PathValue("name")
 
 	var body struct {
 		Name string `json:"name"`
@@ -159,24 +167,21 @@ func (h *PrivateHandler) handleRenameList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	list, err := h.lists.Rename(r.Context(), id, body.Name)
+	list, err := h.lists.Rename(r.Context(), name, body.Name)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "rename list failed", slog.Uint64("id", uint64(id)), slog.Any("error", err))
+		h.logger.ErrorContext(r.Context(), "rename list failed", slog.String("name", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to rename list")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, listResponse{ID: list.ID, Name: list.Name})
+	writeJSON(w, http.StatusOK, listResponse{Name: list.Name})
 }
 
 func (h *PrivateHandler) handleDeleteList(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUintPath(w, r, "id")
-	if !ok {
-		return
-	}
+	name := r.PathValue("name")
 
-	if err := h.lists.Delete(r.Context(), id); err != nil {
-		h.logger.ErrorContext(r.Context(), "delete list failed", slog.Uint64("id", uint64(id)), slog.Any("error", err))
+	if err := h.lists.Delete(r.Context(), name); err != nil {
+		h.logger.ErrorContext(r.Context(), "delete list failed", slog.String("name", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to delete list")
 		return
 	}
@@ -185,14 +190,11 @@ func (h *PrivateHandler) handleDeleteList(w http.ResponseWriter, r *http.Request
 }
 
 func (h *PrivateHandler) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUintPath(w, r, "id")
-	if !ok {
-		return
-	}
+	name := r.PathValue("name")
 
-	users, err := h.lists.Users(r.Context(), id)
+	users, err := h.lists.Users(r.Context(), name)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "list users failed", slog.Uint64("id", uint64(id)), slog.Any("error", err))
+		h.logger.ErrorContext(r.Context(), "list users failed", slog.String("name", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to load users")
 		return
 	}
@@ -300,16 +302,4 @@ func buildSignedMessage(timestamp, method, path string, body []byte) []byte {
 	sum := sha256.Sum256(body)
 	bodyHash := hex.EncodeToString(sum[:])
 	return []byte(timestamp + "\n" + method + "\n" + path + "\n" + bodyHash)
-}
-
-// --- helpers ---
-
-func parseUintPath(w http.ResponseWriter, r *http.Request, key string) (uint, bool) {
-	raw := r.PathValue(key)
-	n, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid %s", key))
-		return 0, false
-	}
-	return uint(n), true
 }

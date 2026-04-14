@@ -20,7 +20,7 @@ func newSubscriptionSvc(
 
 func TestSubscriptionService_Subscribe(t *testing.T) {
 	metadata := domain.MailMetadata{Subject: "Confirm", SenderName: "Bot"}
-	list := &domain.MailingList{ID: 1, Name: "weekly"}
+	list := &domain.MailingList{Name: "weekly"}
 
 	t.Run("adds user, creates confirmation, sends mail", func(t *testing.T) {
 		users := newFakeUserRepo()
@@ -135,7 +135,7 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 
 func TestSubscriptionService_Confirm(t *testing.T) {
 	t.Run("confirms user and deletes confirmation", func(t *testing.T) {
-		users := newFakeUserRepo(&domain.User{ID: 1, Email: "alice@example.com", MailingListID: 1})
+		users := newFakeUserRepo(&domain.User{ID: 1, Email: "alice@example.com", MailingListName: "weekly"})
 		confs := newFakeConfirmationRepo(&domain.Confirmation{ID: 1, UserID: 1, Token: "abc123"})
 		svc := newSubscriptionSvc(newFakeListRepo(), users, confs, &fakeRenderer{}, &fakeSender{})
 
@@ -172,7 +172,7 @@ func TestSubscriptionService_Confirm(t *testing.T) {
 	})
 
 	t.Run("returns error when DeleteConfirmation fails", func(t *testing.T) {
-		users := newFakeUserRepo(&domain.User{ID: 1, Email: "alice@example.com", MailingListID: 1})
+		users := newFakeUserRepo(&domain.User{ID: 1, Email: "alice@example.com", MailingListName: "weekly"})
 		confs := newFakeConfirmationRepo(&domain.Confirmation{ID: 1, UserID: 1, Token: "tok"})
 		confs.deleteErr = errors.New("delete failed")
 		svc := newSubscriptionSvc(newFakeListRepo(), users, confs, &fakeRenderer{}, &fakeSender{})
@@ -184,7 +184,7 @@ func TestSubscriptionService_Confirm(t *testing.T) {
 }
 
 func TestSubscriptionService_Unsubscribe(t *testing.T) {
-	u := &domain.User{ID: 1, Email: "alice@example.com", MailingListID: 1, UnsubscribeToken: "tok-alice"}
+	u := &domain.User{ID: 1, Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "tok-alice"}
 
 	t.Run("removes user by unsubscribe token", func(t *testing.T) {
 		users := newFakeUserRepo(u)

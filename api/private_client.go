@@ -34,13 +34,11 @@ func NewPrivateClient(baseURL string, privateKey ed25519.PrivateKey) *PrivateCli
 
 // ListResponse is returned by list creation and rename endpoints.
 type ListResponse struct {
-	ID   uint   `json:"id"`
 	Name string `json:"name"`
 }
 
 // ListDetailResponse is returned by the get-list endpoint.
 type ListDetailResponse struct {
-	ID          uint   `json:"id"`
 	Name        string `json:"name"`
 	Subscribers struct {
 		Total     int `json:"total"`
@@ -62,6 +60,25 @@ type RecipientInput struct {
 	Email string `json:"email"`
 }
 
+// GetAllLists returns all mailing lists.
+func (c *PrivateClient) GetAllLists(ctx context.Context) ([]ListResponse, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/lists", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all lists: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("get all lists: %w", err)
+	}
+
+	var out []ListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("get all lists: decode response: %w", err)
+	}
+	return out, nil
+}
+
 // CreateList creates a new mailing list.
 func (c *PrivateClient) CreateList(ctx context.Context, name string) (*ListResponse, error) {
 	resp, err := c.do(ctx, http.MethodPost, "/lists", map[string]string{"name": name})
@@ -81,9 +98,9 @@ func (c *PrivateClient) CreateList(ctx context.Context, name string) (*ListRespo
 	return &out, nil
 }
 
-// GetList returns the mailing list with the given id along with subscriber stats.
-func (c *PrivateClient) GetList(ctx context.Context, id uint) (*ListDetailResponse, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%d", id), nil)
+// GetList returns the mailing list with the given name along with subscriber stats.
+func (c *PrivateClient) GetList(ctx context.Context, name string) (*ListDetailResponse, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%s", name), nil)
 	if err != nil {
 		return nil, fmt.Errorf("get list: %w", err)
 	}
@@ -100,9 +117,9 @@ func (c *PrivateClient) GetList(ctx context.Context, id uint) (*ListDetailRespon
 	return &out, nil
 }
 
-// RenameList renames the mailing list with the given id.
-func (c *PrivateClient) RenameList(ctx context.Context, id uint, name string) (*ListResponse, error) {
-	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/lists/%d", id), map[string]string{"name": name})
+// RenameList renames the mailing list identified by name.
+func (c *PrivateClient) RenameList(ctx context.Context, name, newName string) (*ListResponse, error) {
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/lists/%s", name), map[string]string{"name": newName})
 	if err != nil {
 		return nil, fmt.Errorf("rename list: %w", err)
 	}
@@ -119,9 +136,9 @@ func (c *PrivateClient) RenameList(ctx context.Context, id uint, name string) (*
 	return &out, nil
 }
 
-// DeleteList deletes the mailing list with the given id.
-func (c *PrivateClient) DeleteList(ctx context.Context, id uint) error {
-	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/lists/%d", id), nil)
+// DeleteList deletes the mailing list with the given name.
+func (c *PrivateClient) DeleteList(ctx context.Context, name string) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/lists/%s", name), nil)
 	if err != nil {
 		return fmt.Errorf("delete list: %w", err)
 	}
@@ -133,9 +150,9 @@ func (c *PrivateClient) DeleteList(ctx context.Context, id uint) error {
 	return nil
 }
 
-// GetUsers returns all subscribers (confirmed or not) for the given list id.
-func (c *PrivateClient) GetUsers(ctx context.Context, listID uint) ([]UserItem, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%d/users", listID), nil)
+// GetUsers returns all subscribers (confirmed or not) for the named list.
+func (c *PrivateClient) GetUsers(ctx context.Context, listName string) ([]UserItem, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%s/users", listName), nil)
 	if err != nil {
 		return nil, fmt.Errorf("get users: %w", err)
 	}

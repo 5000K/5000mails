@@ -46,9 +46,9 @@ type Config struct {
 
 	Paths struct {
 		Config      string `env:"CONFIG_PATH" env-default:"config.yml"`
-		Template    string `env:"TEMPLATE_PATH" env-default:"./template.html" yaml:"template"`
-		Theme       string `env:"THEME_PATH" env-default:"https://raw.githubusercontent.com/5000K/5000blogs/refs/heads/stable/template/theme.base.css" yaml:"theme"`
-		ConfirmMail string `env:"CONFIRM_MAIL_PATH" env-default:"./confirm.md" yaml:"confirm-mail"`
+		Template    string `env:"TEMPLATE_PATH" env-default:"https://github.com/5000K/5000mails/releases/latest/download/template.html" yaml:"template"`
+		Theme       string `env:"THEME_PATH" env-default:"https://github.com/5000K/5000mails/releases/latest/download/theme.example.css" yaml:"theme"`
+		ConfirmMail string `env:"CONFIRM_MAIL_PATH" env-default:"https://github.com/5000K/5000mails/releases/latest/download/confirm.md" yaml:"confirm-mail"`
 	} `yaml:"paths"`
 }
 

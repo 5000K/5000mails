@@ -10,45 +10,40 @@ import (
 
 // fakeListRepo is an in-memory MailingListRepository.
 type fakeListRepo struct {
-	lists  map[uint]*domain.MailingList
-	nextID uint
+	lists map[string]*domain.MailingList
 
 	createErr    error
-	getErr       error
+	getAllErr    error
 	getByNameErr error
 	updateErr    error
 	deleteErr    error
 }
 
 func newFakeListRepo(seed ...*domain.MailingList) *fakeListRepo {
-	r := &fakeListRepo{lists: make(map[uint]*domain.MailingList), nextID: 1}
+	r := &fakeListRepo{lists: make(map[string]*domain.MailingList)}
 	for _, l := range seed {
-		r.lists[l.ID] = l
-		if l.ID >= r.nextID {
-			r.nextID = l.ID + 1
-		}
+		r.lists[l.Name] = l
 	}
 	return r
+}
+
+func (r *fakeListRepo) GetAllLists(_ context.Context) ([]domain.MailingList, error) {
+	if r.getAllErr != nil {
+		return nil, r.getAllErr
+	}
+	out := make([]domain.MailingList, 0, len(r.lists))
+	for _, l := range r.lists {
+		out = append(out, *l)
+	}
+	return out, nil
 }
 
 func (r *fakeListRepo) CreateList(_ context.Context, name string) (*domain.MailingList, error) {
 	if r.createErr != nil {
 		return nil, r.createErr
 	}
-	l := &domain.MailingList{ID: r.nextID, Name: name}
-	r.nextID++
-	r.lists[l.ID] = l
-	return l, nil
-}
-
-func (r *fakeListRepo) GetList(_ context.Context, id uint) (*domain.MailingList, error) {
-	if r.getErr != nil {
-		return nil, r.getErr
-	}
-	l, ok := r.lists[id]
-	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
-	}
+	l := &domain.MailingList{Name: name}
+	r.lists[name] = l
 	return l, nil
 }
 
@@ -56,34 +51,35 @@ func (r *fakeListRepo) GetListByName(_ context.Context, name string) (*domain.Ma
 	if r.getByNameErr != nil {
 		return nil, r.getByNameErr
 	}
-	for _, l := range r.lists {
-		if l.Name == name {
-			return l, nil
-		}
-	}
-	return nil, fmt.Errorf("list %q not found", name)
-}
-
-func (r *fakeListRepo) UpdateList(_ context.Context, id uint, name string) (*domain.MailingList, error) {
-	if r.updateErr != nil {
-		return nil, r.updateErr
-	}
-	l, ok := r.lists[id]
+	l, ok := r.lists[name]
 	if !ok {
-		return nil, fmt.Errorf("list %d not found", id)
+		return nil, fmt.Errorf("list %q not found", name)
 	}
-	l.Name = name
 	return l, nil
 }
 
-func (r *fakeListRepo) DeleteList(_ context.Context, id uint) error {
+func (r *fakeListRepo) RenameList(_ context.Context, name, newName string) (*domain.MailingList, error) {
+	if r.updateErr != nil {
+		return nil, r.updateErr
+	}
+	l, ok := r.lists[name]
+	if !ok {
+		return nil, fmt.Errorf("list %q not found", name)
+	}
+	delete(r.lists, name)
+	l.Name = newName
+	r.lists[newName] = l
+	return l, nil
+}
+
+func (r *fakeListRepo) DeleteList(_ context.Context, name string) error {
 	if r.deleteErr != nil {
 		return r.deleteErr
 	}
-	if _, ok := r.lists[id]; !ok {
-		return fmt.Errorf("list %d not found", id)
+	if _, ok := r.lists[name]; !ok {
+		return fmt.Errorf("list %q not found", name)
 	}
-	delete(r.lists, id)
+	delete(r.lists, name)
 	return nil
 }
 
@@ -111,11 +107,11 @@ func newFakeUserRepo(seed ...*domain.User) *fakeUserRepo {
 	return r
 }
 
-func (r *fakeUserRepo) AddUser(_ context.Context, mailingListID uint, name, email, unsubscribeToken string) (*domain.User, error) {
+func (r *fakeUserRepo) AddUser(_ context.Context, mailingListName string, name, email, unsubscribeToken string) (*domain.User, error) {
 	if r.addErr != nil {
 		return nil, r.addErr
 	}
-	u := &domain.User{ID: r.nextID, Name: name, Email: email, MailingListID: mailingListID, UnsubscribeToken: unsubscribeToken}
+	u := &domain.User{ID: r.nextID, Name: name, Email: email, MailingListName: mailingListName, UnsubscribeToken: unsubscribeToken}
 	r.nextID++
 	r.users[u.ID] = u
 	return u, nil
@@ -146,26 +142,26 @@ func (r *fakeUserRepo) GetUserByUnsubscribeToken(_ context.Context, token string
 	return nil, fmt.Errorf("user with unsubscribe token %q not found", token)
 }
 
-func (r *fakeUserRepo) GetUsers(_ context.Context, mailingListID uint) ([]domain.User, error) {
+func (r *fakeUserRepo) GetUsers(_ context.Context, mailingListName string) ([]domain.User, error) {
 	if r.getUsersErr != nil {
 		return nil, r.getUsersErr
 	}
 	var out []domain.User
 	for _, u := range r.users {
-		if u.MailingListID == mailingListID {
+		if u.MailingListName == mailingListName {
 			out = append(out, *u)
 		}
 	}
 	return out, nil
 }
 
-func (r *fakeUserRepo) GetConfirmedUsers(_ context.Context, mailingListID uint) ([]domain.User, error) {
+func (r *fakeUserRepo) GetConfirmedUsers(_ context.Context, mailingListName string) ([]domain.User, error) {
 	if r.getConfirmedErr != nil {
 		return nil, r.getConfirmedErr
 	}
 	var out []domain.User
 	for _, u := range r.users {
-		if u.MailingListID == mailingListID && u.ConfirmedAt != nil {
+		if u.MailingListName == mailingListName && u.ConfirmedAt != nil {
 			out = append(out, *u)
 		}
 	}
@@ -259,10 +255,10 @@ func (s *fakeSender) SendMail(_ context.Context, metadata domain.MailMetadata, b
 
 // fakeRenderer returns configurable metadata / body.
 type fakeRenderer struct {
-	metadata     domain.MailMetadata
-	body         string
-	err          error
-	lastData     map[string]any
+	metadata domain.MailMetadata
+	body     string
+	err      error
+	lastData map[string]any
 }
 
 func (r *fakeRenderer) Render(_ *string, data map[string]any) (domain.MailMetadata, string, error) {

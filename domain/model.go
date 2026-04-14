@@ -4,7 +4,6 @@ import "time"
 
 // MailingList represents a named list that users can subscribe to.
 type MailingList struct {
-	ID   uint
 	Name string
 }
 
@@ -14,7 +13,7 @@ type User struct {
 	Name             string
 	Email            string
 	ConfirmedAt      *time.Time
-	MailingListID    uint
+	MailingListName  string
 	UnsubscribeToken string
 }
 

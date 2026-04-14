@@ -55,7 +55,7 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 		return nil, fmt.Errorf("generating unsubscribe token: %w", err)
 	}
 
-	user, err := s.users.AddUser(ctx, list.ID, userName, email, unsubToken)
+	user, err := s.users.AddUser(ctx, list.Name, userName, email, unsubToken)
 	if err != nil {
 		return nil, fmt.Errorf("adding user to list %q: %w", listName, err)
 	}
