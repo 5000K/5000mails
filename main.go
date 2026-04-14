@@ -92,7 +92,7 @@ func main() {
 		}
 		logger.Info("private API authentication enabled")
 	} else {
-		logger.Warn("private API authentication disabled — no public key configured")
+		logger.Warn("private API authentication disabled - no public key configured")
 	}
 
 	privateHandler := api.NewPrivateHandler(listSvc, mailSvc, publicKey, logger)
