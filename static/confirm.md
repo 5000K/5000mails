@@ -8,7 +8,7 @@ Thanks for signing up! Click the button below to confirm your email address and 
 
 [Confirm my subscription]({{.confirmURL}})
 
-If you did not sign up, you can safely ignore this email — nothing will change.
+If you did not sign up, you can safely ignore this email - nothing will change.
 
 ---
 

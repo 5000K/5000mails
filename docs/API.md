@@ -9,9 +9,9 @@ All responses: `Content-Type: application/json`
 Subscribe a user to the named mailing list. Triggers a double opt-in confirmation email.
 
 **Path params**
-- `listName` — name of the mailing list
+- `listName` - name of the mailing list
 
-**Body** — `application/json` or `application/x-www-form-urlencoded`
+**Body** - `application/json` or `application/x-www-form-urlencoded`
 
 | Field   | Type   | Required |
 |---------|--------|----------|
@@ -26,6 +26,8 @@ Subscribe a user to the named mailing list. Triggers a double opt-in confirmatio
 | `400`  | Missing/invalid fields  |
 | `500`  | Internal error          |
 
+When redirect pages are configured, all outcomes issue a `303 See Other` instead of a JSON body. See [CONFIG.md](CONFIG.md#redirects).
+
 ---
 
 ## GET `/confirm/{token}`
@@ -33,7 +35,7 @@ Subscribe a user to the named mailing list. Triggers a double opt-in confirmatio
 Complete double opt-in using the token from the confirmation email.
 
 **Path params**
-- `token` — 64-char hex token
+- `token` - 64-char hex token
 
 **Responses**
 
@@ -49,7 +51,7 @@ Complete double opt-in using the token from the confirmation email.
 Remove a subscriber using their per-subscription unsubscribe token (included in every newsletter).
 
 **Path params**
-- `token` — 64-char hex unsubscribe token (unique per subscription)
+- `token` - 64-char hex unsubscribe token (unique per subscription)
 
 **Responses**
 
@@ -85,7 +87,7 @@ Requests whose timestamp differs from the server's clock by more than 5 minutes 
 
 Create a new mailing list.
 
-**Body** — `application/json`
+**Body** - `application/json`
 
 | Field  | Type   | Required |
 |--------|--------|----------|
@@ -111,7 +113,7 @@ Create a new mailing list.
 Get list details including subscriber counts.
 
 **Path params**
-- `id` — numeric list ID
+- `id` - numeric list ID
 
 **Responses**
 
@@ -137,9 +139,9 @@ Get list details including subscriber counts.
 Rename a mailing list.
 
 **Path params**
-- `id` — numeric list ID
+- `id` - numeric list ID
 
-**Body** — `application/json`
+**Body** - `application/json`
 
 | Field  | Type   | Required |
 |--------|--------|----------|
@@ -160,7 +162,7 @@ Rename a mailing list.
 Delete a mailing list and all its subscribers.
 
 **Path params**
-- `id` — numeric list ID
+- `id` - numeric list ID
 
 **Responses**
 
@@ -177,7 +179,7 @@ Delete a mailing list and all its subscribers.
 List all subscribers of a mailing list.
 
 **Path params**
-- `id` — numeric list ID
+- `id` - numeric list ID
 
 **Responses**
 
@@ -202,9 +204,9 @@ List all subscribers of a mailing list.
 Render a markdown newsletter and send it to all confirmed subscribers of the named list.
 
 **Path params**
-- `name` — list name
+- `name` - list name
 
-**Body** — `application/json`
+**Body** - `application/json`
 
 | Field  | Type   | Required | Description                                   |
 |--------|--------|----------|-----------------------------------------------|
@@ -225,7 +227,7 @@ Render a markdown newsletter and send it to all confirmed subscribers of the nam
 
 Send a rendered test mail to a single recipient without touching any list.
 
-**Body** — `application/json`
+**Body** - `application/json`
 
 | Field             | Type   | Required | Description             |
 |-------------------|--------|----------|-------------------------|
@@ -236,8 +238,8 @@ Send a rendered test mail to a single recipient without touching any list.
 
 **Responses**
 
-| Status | Meaning                           |
-|--------|-----------------------------------|
-| `200`  | Test mail sent                    |
+| Status | Meaning                            |
+|--------|------------------------------------|
+| `200`  | Test mail sent                     |
 | `400`  | Missing `recipient.email` or `raw` |
-| `500`  | Internal error                    |
+| `500`  | Internal error                     |

@@ -46,7 +46,11 @@ func (f *fakeSubscriber) Unsubscribe(_ context.Context, token string) error {
 }
 
 func newTestHandler(sub *fakeSubscriber) *PublicHandler {
-	return NewPublicHandler(sub, slog.Default())
+	return NewPublicHandler(sub, RedirectPages{}, slog.Default())
+}
+
+func newTestHandlerWithRedirects(sub *fakeSubscriber, redirects RedirectPages) *PublicHandler {
+	return NewPublicHandler(sub, redirects, slog.Default())
 }
 
 func TestHandleSubscribe(t *testing.T) {
@@ -258,6 +262,120 @@ func TestRoutes(t *testing.T) {
 		var got map[string]string
 		if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 			t.Errorf("expected valid JSON response: %v", err)
+		}
+	})
+}
+
+func TestRedirectPages(t *testing.T) {
+	redirects := RedirectPages{
+		SubscribeSuccess:   "https://example.com/subscribe/success",
+		SubscribeError:     "https://example.com/subscribe/error",
+		ConfirmSuccess:     "https://example.com/confirm/success",
+		ConfirmError:       "https://example.com/confirm/error",
+		UnsubscribeSuccess: "https://example.com/unsubscribe/success",
+		UnsubscribeError:   "https://example.com/unsubscribe/error",
+	}
+
+	t.Run("subscribe success redirects", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
+		body := `{"name":"Alice","email":"alice@example.com"}`
+		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("listName", "weekly")
+		w := httptest.NewRecorder()
+		h.handleSubscribe(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.SubscribeSuccess {
+			t.Errorf("expected Location %q, got %q", redirects.SubscribeSuccess, loc)
+		}
+	})
+
+	t.Run("subscribe error redirects on bad request", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
+		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(`{"name":"Alice"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("listName", "weekly")
+		w := httptest.NewRecorder()
+		h.handleSubscribe(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.SubscribeError {
+			t.Errorf("expected Location %q, got %q", redirects.SubscribeError, loc)
+		}
+	})
+
+	t.Run("subscribe error redirects on service error", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{subscribeErr: errors.New("db down")}, redirects)
+		body := `{"name":"Alice","email":"alice@example.com"}`
+		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("listName", "weekly")
+		w := httptest.NewRecorder()
+		h.handleSubscribe(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.SubscribeError {
+			t.Errorf("expected Location %q, got %q", redirects.SubscribeError, loc)
+		}
+	})
+
+	t.Run("confirm success redirects", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
+		req := httptest.NewRequest(http.MethodGet, "/confirm/abc123", nil)
+		req.SetPathValue("token", "abc123")
+		w := httptest.NewRecorder()
+		h.handleConfirm(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.ConfirmSuccess {
+			t.Errorf("expected Location %q, got %q", redirects.ConfirmSuccess, loc)
+		}
+	})
+
+	t.Run("confirm error redirects", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{confirmeErr: errors.New("bad token")}, redirects)
+		req := httptest.NewRequest(http.MethodGet, "/confirm/bad", nil)
+		req.SetPathValue("token", "bad")
+		w := httptest.NewRecorder()
+		h.handleConfirm(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.ConfirmError {
+			t.Errorf("expected Location %q, got %q", redirects.ConfirmError, loc)
+		}
+	})
+
+	t.Run("unsubscribe success redirects", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
+		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/tok123", nil)
+		req.SetPathValue("token", "tok123")
+		w := httptest.NewRecorder()
+		h.handleUnsubscribe(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.UnsubscribeSuccess {
+			t.Errorf("expected Location %q, got %q", redirects.UnsubscribeSuccess, loc)
+		}
+	})
+
+	t.Run("unsubscribe error redirects", func(t *testing.T) {
+		h := newTestHandlerWithRedirects(&fakeSubscriber{unsubscribeErr: errors.New("bad token")}, redirects)
+		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/bad", nil)
+		req.SetPathValue("token", "bad")
+		w := httptest.NewRecorder()
+		h.handleUnsubscribe(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("expected 303, got %d", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != redirects.UnsubscribeError {
+			t.Errorf("expected Location %q, got %q", redirects.UnsubscribeError, loc)
 		}
 	})
 }

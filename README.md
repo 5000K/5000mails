@@ -17,7 +17,7 @@ go build -o 5kmcli ./cmd/cli
 | Flag                 | Default                 | Description                             |
 | -------------------- | ----------------------- | --------------------------------------- |
 | `--server URL`       | `http://localhost:9000` | Server base URL                         |
-| `--private-key-path` | —                       | Path to Ed25519 private key for signing |
+| `--private-key-path` | -                       | Path to Ed25519 private key for signing |
 
 **Commands**
 
