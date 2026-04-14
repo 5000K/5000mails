@@ -14,15 +14,17 @@ type MailService struct {
 	users    domain.UserRepository
 	renderer domain.Renderer
 	sender   domain.Sender
+	baseURL  string
 }
 
 // NewMailService creates a new MailService.
-func NewMailService(lists domain.MailingListRepository, users domain.UserRepository, renderer domain.Renderer, sender domain.Sender) *MailService {
+func NewMailService(lists domain.MailingListRepository, users domain.UserRepository, renderer domain.Renderer, sender domain.Sender, baseURL string) *MailService {
 	return &MailService{
 		lists:    lists,
 		users:    users,
 		renderer: renderer,
 		sender:   sender,
+		baseURL:  baseURL,
 	}
 }
 
@@ -45,11 +47,12 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 	}
 
 	for _, recipient := range recipients {
-		recipientData := make(map[string]any, len(data)+1)
+		recipientData := make(map[string]any, len(data)+2)
 		for k, v := range data {
 			recipientData[k] = v
 		}
 		recipientData["Recipient"] = recipient
+		recipientData["unsubscribeURL"] = s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken
 
 		metadata, body, err := s.renderer.Render(&raw, recipientData)
 		if err != nil {
@@ -69,11 +72,12 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 // making this suitable for previewing a newsletter before a real dispatch.
 // data is passed through to the renderer as template variables.
 func (s *MailService) SendTestMail(ctx context.Context, recipient domain.User, raw string, data map[string]any) error {
-	recipientData := make(map[string]any, len(data)+1)
+	recipientData := make(map[string]any, len(data)+2)
 	for k, v := range data {
 		recipientData[k] = v
 	}
 	recipientData["Recipient"] = recipient
+	recipientData["unsubscribeURL"] = s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken
 
 	metadata, body, err := s.renderer.Render(&raw, recipientData)
 	if err != nil {
