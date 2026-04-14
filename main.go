@@ -65,7 +65,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	subscriptionSvc := service.NewSubscriptionService(repo, repo, repo, rndr, sender, string(confirmRaw))
+	subscriptionSvc := service.NewSubscriptionService(repo, repo, repo, rndr, sender, string(confirmRaw), cfg.BaseURL)
 	listSvc := service.NewListService(repo, repo)
 	mailSvc := service.NewMailService(repo, repo, rndr, sender)
 

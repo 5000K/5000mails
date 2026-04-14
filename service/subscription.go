@@ -17,6 +17,7 @@ type SubscriptionService struct {
 	renderer      domain.Renderer
 	sender        domain.Sender
 	confirmMail   string // raw markdown template for the confirmation mail
+	baseURL       string
 }
 
 // NewSubscriptionService creates a new SubscriptionService.
@@ -27,6 +28,7 @@ func NewSubscriptionService(
 	renderer domain.Renderer,
 	sender domain.Sender,
 	confirmMail string,
+	baseURL string,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		lists:         lists,
@@ -35,6 +37,7 @@ func NewSubscriptionService(
 		renderer:      renderer,
 		sender:        sender,
 		confirmMail:   confirmMail,
+		baseURL:       baseURL,
 	}
 }
 
@@ -67,8 +70,9 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 	}
 
 	metadata, body, err := s.renderer.Render(&s.confirmMail, map[string]any{
-		"token":     token,
-		"Recipient": *user,
+		"token":      token,
+		"confirmURL": s.baseURL + "/confirm/" + token,
+		"Recipient":  *user,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering confirmation mail: %w", err)

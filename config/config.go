@@ -31,6 +31,7 @@ type SmtpConfig struct {
 type Config struct {
 	PublicAddr  string `env:"PUBLIC_ADDR" env-default:":8080" yaml:"public-addr"`
 	PrivateAddr string `env:"PRIVATE_ADDR" env-default:":9000" yaml:"private-addr"`
+	BaseURL     string `env:"BASE_URL" env-default:"http://localhost:8080" yaml:"base-url"`
 
 	Smtp SmtpConfig `yaml:"smtp"`
 

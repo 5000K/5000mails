@@ -15,7 +15,7 @@ func newSubscriptionSvc(
 	renderer *fakeRenderer,
 	sender *fakeSender,
 ) *SubscriptionService {
-	return NewSubscriptionService(lists, users, confs, renderer, sender, "# Confirm your subscription\nToken: {{.token}}")
+	return NewSubscriptionService(lists, users, confs, renderer, sender, "# Confirm your subscription\nToken: {{.token}}", "https://example.com")
 }
 
 func TestSubscriptionService_Subscribe(t *testing.T) {
@@ -60,6 +60,20 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 		}
 		if u, ok := got.(domain.User); !ok || u.Email != user.Email {
 			t.Errorf("unexpected Recipient in render data: %+v", got)
+		}
+	})
+
+	t.Run("injects confirmURL into render data", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: metadata, body: "click here"}
+		svc := newSubscriptionSvc(newFakeListRepo(list), newFakeUserRepo(), newFakeConfirmationRepo(), renderer, &fakeSender{})
+
+		if _, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		token, _ := renderer.lastData["token"].(string)
+		wantURL := "https://example.com/confirm/" + token
+		if got, _ := renderer.lastData["confirmURL"].(string); got != wantURL {
+			t.Errorf("confirmURL = %q, want %q", got, wantURL)
 		}
 	})
 
