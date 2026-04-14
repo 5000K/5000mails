@@ -6,7 +6,7 @@ Uses the same base conventions as [5000blogs](https://github.com/5000K/5000blogs
 
 ## CLI
 
-`5kmcli` is the command-line client for the private API. Build it with:
+`5kmcli` is the command-line client for the management API. Build it with:
 
 ```sh
 go build -o 5kmcli ./cmd/cli
