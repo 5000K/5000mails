@@ -109,3 +109,29 @@ func ToDomainSentNewsletters(newsletters []SentNewsletter) []domain.SentNewslett
 	}
 	return result
 }
+
+type ScheduledMail struct {
+	gorm.Model
+	MailingListName string `gorm:"not null;index"`
+	RawMarkdown     string `gorm:"not null"`
+	ScheduledAt     int64  `gorm:"not null;index"`
+	SentAt          *int64
+}
+
+func ToDomainScheduledMail(m *ScheduledMail) *domain.ScheduledMail {
+	return &domain.ScheduledMail{
+		ID:              m.ID,
+		MailingListName: m.MailingListName,
+		RawMarkdown:     m.RawMarkdown,
+		ScheduledAt:     m.ScheduledAt,
+		SentAt:          m.SentAt,
+	}
+}
+
+func ToDomainScheduledMails(mails []ScheduledMail) []domain.ScheduledMail {
+	result := make([]domain.ScheduledMail, len(mails))
+	for i := range mails {
+		result[i] = *ToDomainScheduledMail(&mails[i])
+	}
+	return result
+}

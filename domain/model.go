@@ -50,3 +50,13 @@ type SentNewsletter struct {
 	Recipients   []User
 	MailingLists []MailingList
 }
+
+// ScheduledMail is a pending newsletter queued for future delivery.
+// ScheduledAt and SentAt are unix timestamps (UTC).
+type ScheduledMail struct {
+	ID              uint
+	MailingListName string
+	RawMarkdown     string
+	ScheduledAt     int64
+	SentAt          *int64
+}

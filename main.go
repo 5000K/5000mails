@@ -68,6 +68,8 @@ func main() {
 	subscriptionSvc := service.NewSubscriptionService(repo, repo, repo, rndr, sender, string(confirmRaw), cfg.BaseURL)
 	listSvc := service.NewListService(repo, repo)
 	mailSvc := service.NewMailService(repo, repo, repo, rndr, sender, cfg.BaseURL)
+	schedulingSvc := service.NewSchedulingService(repo, mailSvc, 30*time.Second, logger)
+	schedulingSvc.Start()
 
 	publicHandler := api.NewPublicHandler(subscriptionSvc, mailSvc, api.RedirectPages{
 		SubscribeSuccess:   cfg.Redirects.SubscribeSuccess,
@@ -90,7 +92,7 @@ func main() {
 		logger.Warn("private API authentication disabled - no public key configured")
 	}
 
-	privateHandler := api.NewPrivateHandler(listSvc, mailSvc, mailSvc, publicKey, logger)
+	privateHandler := api.NewPrivateHandler(listSvc, mailSvc, mailSvc, schedulingSvc, publicKey, logger)
 
 	publicServer := &http.Server{Addr: cfg.PublicAddr, Handler: publicHandler.Routes()}
 	privateServer := &http.Server{Addr: cfg.PrivateAddr, Handler: privateHandler.Routes()}
@@ -125,4 +127,5 @@ func main() {
 	}
 
 	logger.Info("servers stopped")
+	schedulingSvc.Stop()
 }

@@ -39,3 +39,14 @@ type Renderer interface {
 type Sender interface {
 	SendMail(ctx context.Context, metadata MailMetadata, body string, recipient User) error
 }
+
+type ScheduledMailRepository interface {
+	CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*ScheduledMail, error)
+	GetAllScheduledMails(ctx context.Context) ([]ScheduledMail, error)
+	GetScheduledMailByID(ctx context.Context, id uint) (*ScheduledMail, error)
+	GetPendingScheduledMails(ctx context.Context, now int64) ([]ScheduledMail, error)
+	UpdateScheduledMailTime(ctx context.Context, id uint, scheduledAt int64) (*ScheduledMail, error)
+	UpdateScheduledMailContent(ctx context.Context, id uint, rawMarkdown string) (*ScheduledMail, error)
+	MarkScheduledMailSent(ctx context.Context, id uint, sentAt int64) error
+	DeleteScheduledMail(ctx context.Context, id uint) error
+}

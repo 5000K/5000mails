@@ -203,6 +203,121 @@ func (c *PrivateClient) SendTestMail(ctx context.Context, recipient RecipientInp
 	return nil
 }
 
+// ScheduledMailItem describes a single scheduled mail as returned by the API.
+type ScheduledMailItem struct {
+	ID              uint   `json:"id"`
+	MailingListName string `json:"mailingListName"`
+	ScheduledAt     int64  `json:"scheduledAt"`
+	SentAt          *int64 `json:"sentAt"`
+}
+
+// ScheduleMail creates a new scheduled mail for the given list.
+// scheduledAt is a unix timestamp (UTC).
+func (c *PrivateClient) ScheduleMail(ctx context.Context, listName string, raw string, scheduledAt int64) (*ScheduledMailItem, error) {
+	payload := map[string]any{"raw": raw, "scheduledAt": scheduledAt}
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/lists/%s/schedule", listName), payload)
+	if err != nil {
+		return nil, fmt.Errorf("schedule mail: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusCreated); err != nil {
+		return nil, fmt.Errorf("schedule mail: %w", err)
+	}
+	var out ScheduledMailItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("schedule mail: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+// GetAllScheduled returns all scheduled mails.
+func (c *PrivateClient) GetAllScheduled(ctx context.Context) ([]ScheduledMailItem, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/scheduled", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all scheduled: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("get all scheduled: %w", err)
+	}
+	var out []ScheduledMailItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("get all scheduled: decode response: %w", err)
+	}
+	return out, nil
+}
+
+// GetScheduled returns a single scheduled mail by ID.
+func (c *PrivateClient) GetScheduled(ctx context.Context, id uint) (*ScheduledMailItem, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/scheduled/%d", id), nil)
+	if err != nil {
+		return nil, fmt.Errorf("get scheduled: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("get scheduled: %w", err)
+	}
+	var out ScheduledMailItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("get scheduled: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+// DeleteScheduled deletes a scheduled mail by ID.
+func (c *PrivateClient) DeleteScheduled(ctx context.Context, id uint) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/scheduled/%d", id), nil)
+	if err != nil {
+		return fmt.Errorf("delete scheduled: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusNoContent); err != nil {
+		return fmt.Errorf("delete scheduled: %w", err)
+	}
+	return nil
+}
+
+// RescheduleMail changes the delivery time of a scheduled mail.
+// scheduledAt is a unix timestamp (UTC).
+func (c *PrivateClient) RescheduleMail(ctx context.Context, id uint, scheduledAt int64) (*ScheduledMailItem, error) {
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/scheduled/%d/schedule", id), map[string]any{"scheduledAt": scheduledAt})
+	if err != nil {
+		return nil, fmt.Errorf("reschedule mail: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("reschedule mail: %w", err)
+	}
+	var out ScheduledMailItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("reschedule mail: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+// ReplaceScheduledContent replaces the markdown body of a scheduled mail.
+func (c *PrivateClient) ReplaceScheduledContent(ctx context.Context, id uint, raw string) (*ScheduledMailItem, error) {
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/scheduled/%d/content", id), map[string]any{"raw": raw})
+	if err != nil {
+		return nil, fmt.Errorf("replace scheduled content: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("replace scheduled content: %w", err)
+	}
+	var out ScheduledMailItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("replace scheduled content: decode response: %w", err)
+	}
+	return &out, nil
+}
+
 // do builds and executes a signed HTTP request.
 func (c *PrivateClient) do(ctx context.Context, method, path string, payload any) (*http.Response, error) {
 	var bodyBytes []byte

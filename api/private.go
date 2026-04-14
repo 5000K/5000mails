@@ -41,20 +41,31 @@ type NewsletterArchive interface {
 	DeleteNewsletter(ctx context.Context, id uint) error
 }
 
+// ScheduleManager is the private API's view of the scheduling service.
+type ScheduleManager interface {
+	Schedule(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error)
+	List(ctx context.Context) ([]domain.ScheduledMail, error)
+	Get(ctx context.Context, id uint) (*domain.ScheduledMail, error)
+	Delete(ctx context.Context, id uint) error
+	Reschedule(ctx context.Context, id uint, scheduledAt int64) (*domain.ScheduledMail, error)
+	ReplaceContent(ctx context.Context, id uint, rawMarkdown string) (*domain.ScheduledMail, error)
+}
+
 // PrivateHandler serves the private admin API.
 // When publicKey is non-nil, every request must carry a valid Ed25519 signature.
 type PrivateHandler struct {
 	lists       ListManager
 	mail        MailDispatcher
 	newsletters NewsletterArchive
+	scheduler   ScheduleManager
 	publicKey   ed25519.PublicKey
 	logger      *slog.Logger
 }
 
 // NewPrivateHandler creates a new PrivateHandler.
 // Pass a nil publicKey to disable request authentication.
-func NewPrivateHandler(lists ListManager, mail MailDispatcher, newsletters NewsletterArchive, publicKey ed25519.PublicKey, logger *slog.Logger) *PrivateHandler {
-	return &PrivateHandler{lists: lists, mail: mail, newsletters: newsletters, publicKey: publicKey, logger: logger}
+func NewPrivateHandler(lists ListManager, mail MailDispatcher, newsletters NewsletterArchive, scheduler ScheduleManager, publicKey ed25519.PublicKey, logger *slog.Logger) *PrivateHandler {
+	return &PrivateHandler{lists: lists, mail: mail, newsletters: newsletters, scheduler: scheduler, publicKey: publicKey, logger: logger}
 }
 
 // Routes returns the mux for all private API endpoints.
@@ -67,10 +78,16 @@ func (h *PrivateHandler) Routes() *http.ServeMux {
 	mux.Handle("DELETE /lists/{name}", h.auth(h.handleDeleteList))
 	mux.Handle("GET /lists/{name}/users", h.auth(h.handleListUsers))
 	mux.Handle("POST /lists/{name}/send", h.auth(h.handleSendToList))
+	mux.Handle("POST /lists/{name}/schedule", h.auth(h.handleScheduleMail))
 	mux.Handle("POST /mail/test", h.auth(h.handleSendTestMail))
 	mux.Handle("GET /newsletters", h.auth(h.handleAllNewsletters))
 	mux.Handle("GET /newsletters/{id}", h.auth(h.handleGetNewsletter))
 	mux.Handle("DELETE /newsletters/{id}", h.auth(h.handleDeleteNewsletter))
+	mux.Handle("GET /scheduled", h.auth(h.handleAllScheduled))
+	mux.Handle("GET /scheduled/{id}", h.auth(h.handleGetScheduled))
+	mux.Handle("DELETE /scheduled/{id}", h.auth(h.handleDeleteScheduled))
+	mux.Handle("PUT /scheduled/{id}/schedule", h.auth(h.handleRescheduleMail))
+	mux.Handle("PUT /scheduled/{id}/content", h.auth(h.handleReplaceScheduledContent))
 	return mux
 }
 
@@ -125,6 +142,26 @@ type newsletterDetailResponse struct {
 	SentAt       string         `json:"sentAt"`
 	Recipients   []userResponse `json:"recipients"`
 	MailingLists []string       `json:"mailingLists"`
+}
+
+type scheduleRequest struct {
+	Raw         string `json:"raw"`
+	ScheduledAt int64  `json:"scheduledAt"`
+}
+
+type scheduledMailResponse struct {
+	ID              uint   `json:"id"`
+	MailingListName string `json:"mailingListName"`
+	ScheduledAt     int64  `json:"scheduledAt"`
+	SentAt          *int64 `json:"sentAt"`
+}
+
+type rescheduleRequest struct {
+	ScheduledAt int64 `json:"scheduledAt"`
+}
+
+type replaceContentRequest struct {
+	Raw string `json:"raw"`
 }
 
 // --- handlers ---
@@ -341,6 +378,133 @@ func (h *PrivateHandler) handleSendTestMail(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "test mail sent"})
+}
+
+func (h *PrivateHandler) handleScheduleMail(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	var body scheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Raw == "" || body.ScheduledAt == 0 {
+		writeError(w, http.StatusBadRequest, "raw and scheduledAt are required")
+		return
+	}
+
+	m, err := h.scheduler.Schedule(r.Context(), name, body.Raw, body.ScheduledAt)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "schedule mail failed", slog.String("list", name), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to schedule mail")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, scheduledMailResponse{
+		ID:              m.ID,
+		MailingListName: m.MailingListName,
+		ScheduledAt:     m.ScheduledAt,
+		SentAt:          m.SentAt,
+	})
+}
+
+func (h *PrivateHandler) handleAllScheduled(w http.ResponseWriter, r *http.Request) {
+	mails, err := h.scheduler.List(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "list scheduled mails failed", slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to load scheduled mails")
+		return
+	}
+	resp := make([]scheduledMailResponse, len(mails))
+	for i, m := range mails {
+		resp[i] = scheduledMailResponse{
+			ID:              m.ID,
+			MailingListName: m.MailingListName,
+			ScheduledAt:     m.ScheduledAt,
+			SentAt:          m.SentAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PrivateHandler) handleGetScheduled(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	m, err := h.scheduler.Get(r.Context(), uint(id))
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "get scheduled mail failed", slog.Uint64("id", id), slog.Any("error", err))
+		writeError(w, http.StatusNotFound, "scheduled mail not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, scheduledMailResponse{
+		ID:              m.ID,
+		MailingListName: m.MailingListName,
+		ScheduledAt:     m.ScheduledAt,
+		SentAt:          m.SentAt,
+	})
+}
+
+func (h *PrivateHandler) handleDeleteScheduled(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.scheduler.Delete(r.Context(), uint(id)); err != nil {
+		h.logger.ErrorContext(r.Context(), "delete scheduled mail failed", slog.Uint64("id", id), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to delete scheduled mail")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *PrivateHandler) handleRescheduleMail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body rescheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ScheduledAt == 0 {
+		writeError(w, http.StatusBadRequest, "scheduledAt is required")
+		return
+	}
+	m, err := h.scheduler.Reschedule(r.Context(), uint(id), body.ScheduledAt)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "reschedule mail failed", slog.Uint64("id", id), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to reschedule mail")
+		return
+	}
+	writeJSON(w, http.StatusOK, scheduledMailResponse{
+		ID:              m.ID,
+		MailingListName: m.MailingListName,
+		ScheduledAt:     m.ScheduledAt,
+		SentAt:          m.SentAt,
+	})
+}
+
+func (h *PrivateHandler) handleReplaceScheduledContent(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body replaceContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Raw == "" {
+		writeError(w, http.StatusBadRequest, "raw is required")
+		return
+	}
+	m, err := h.scheduler.ReplaceContent(r.Context(), uint(id), body.Raw)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "replace scheduled content failed", slog.Uint64("id", id), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to replace content")
+		return
+	}
+	writeJSON(w, http.StatusOK, scheduledMailResponse{
+		ID:              m.ID,
+		MailingListName: m.MailingListName,
+		ScheduledAt:     m.ScheduledAt,
+		SentAt:          m.SentAt,
+	})
 }
 
 // --- auth middleware ---
