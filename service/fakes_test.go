@@ -233,6 +233,87 @@ func (r *fakeConfirmationRepo) DeleteConfirmation(_ context.Context, id uint) er
 	return nil
 }
 
+// fakeNewsletterRepo is an in-memory SentNewsletterRepository.
+type fakeNewsletterRepo struct {
+	newsletters map[uint]*domain.SentNewsletter
+	nextID      uint
+
+	createErr error
+	getAllErr error
+	getErr    error
+	deleteErr error
+}
+
+func newFakeNewsletterRepo(seed ...*domain.SentNewsletter) *fakeNewsletterRepo {
+	r := &fakeNewsletterRepo{newsletters: make(map[uint]*domain.SentNewsletter), nextID: 1}
+	for _, n := range seed {
+		r.newsletters[n.ID] = n
+		if n.ID >= r.nextID {
+			r.nextID = n.ID + 1
+		}
+	}
+	return r
+}
+
+func (r *fakeNewsletterRepo) CreateSentNewsletter(_ context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*domain.SentNewsletter, error) {
+	if r.createErr != nil {
+		return nil, r.createErr
+	}
+	recipients := make([]domain.User, len(recipientIDs))
+	for i, id := range recipientIDs {
+		recipients[i] = domain.User{ID: id}
+	}
+	lists := make([]domain.MailingList, len(listNames))
+	for i, name := range listNames {
+		lists[i] = domain.MailingList{Name: name}
+	}
+	n := &domain.SentNewsletter{
+		ID:           r.nextID,
+		Subject:      subject,
+		SenderName:   senderName,
+		RawMarkdown:  rawMarkdown,
+		SentAt:       time.Now(),
+		Recipients:   recipients,
+		MailingLists: lists,
+	}
+	r.nextID++
+	r.newsletters[n.ID] = n
+	return n, nil
+}
+
+func (r *fakeNewsletterRepo) GetAllSentNewsletters(_ context.Context) ([]domain.SentNewsletter, error) {
+	if r.getAllErr != nil {
+		return nil, r.getAllErr
+	}
+	out := make([]domain.SentNewsletter, 0, len(r.newsletters))
+	for _, n := range r.newsletters {
+		out = append(out, *n)
+	}
+	return out, nil
+}
+
+func (r *fakeNewsletterRepo) GetSentNewsletterByID(_ context.Context, id uint, _ bool) (*domain.SentNewsletter, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	n, ok := r.newsletters[id]
+	if !ok {
+		return nil, fmt.Errorf("newsletter %d not found", id)
+	}
+	return n, nil
+}
+
+func (r *fakeNewsletterRepo) DeleteSentNewsletter(_ context.Context, id uint) error {
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	if _, ok := r.newsletters[id]; !ok {
+		return fmt.Errorf("newsletter %d not found", id)
+	}
+	delete(r.newsletters, id)
+	return nil
+}
+
 // fakeSender records SendMail calls.
 type fakeSender struct {
 	calls []sendCall

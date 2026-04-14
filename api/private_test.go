@@ -147,10 +147,82 @@ func (f *fakeMailDispatcher) SendTestMail(_ context.Context, recipient domain.Us
 	return f.sendTestMailErr
 }
 
+type fakeNewsletterArchive struct {
+	newsletters map[uint]*domain.SentNewsletter
+	nextID      uint
+
+	getAllErr error
+	getErr    error
+	deleteErr error
+}
+
+func newFakeNewsletterArchive(seed ...*domain.SentNewsletter) *fakeNewsletterArchive {
+	f := &fakeNewsletterArchive{newsletters: make(map[uint]*domain.SentNewsletter), nextID: 1}
+	for _, n := range seed {
+		f.newsletters[n.ID] = n
+		if n.ID >= f.nextID {
+			f.nextID = n.ID + 1
+		}
+	}
+	return f
+}
+
+func (f *fakeNewsletterArchive) AllNewsletters(_ context.Context) ([]domain.SentNewsletter, error) {
+	if f.getAllErr != nil {
+		return nil, f.getAllErr
+	}
+	out := make([]domain.SentNewsletter, 0, len(f.newsletters))
+	for _, n := range f.newsletters {
+		out = append(out, *n)
+	}
+	return out, nil
+}
+
+func (f *fakeNewsletterArchive) GetNewsletter(_ context.Context, id uint) (*domain.SentNewsletter, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	n, ok := f.newsletters[id]
+	if !ok {
+		return nil, fmt.Errorf("newsletter %d not found", id)
+	}
+	return n, nil
+}
+
+func (f *fakeNewsletterArchive) DeleteNewsletter(_ context.Context, id uint) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	if _, ok := f.newsletters[id]; !ok {
+		return fmt.Errorf("newsletter %d not found", id)
+	}
+	delete(f.newsletters, id)
+	return nil
+}
+
 // --- helpers ---
 
+type fakeScheduleManager struct{}
+
+func (f *fakeScheduleManager) Schedule(_ context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: 1, MailingListName: mailingListName, RawMarkdown: rawMarkdown, ScheduledAt: scheduledAt}, nil
+}
+func (f *fakeScheduleManager) List(_ context.Context) ([]domain.ScheduledMail, error) {
+	return nil, nil
+}
+func (f *fakeScheduleManager) Get(_ context.Context, id uint) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id}, nil
+}
+func (f *fakeScheduleManager) Delete(_ context.Context, _ uint) error { return nil }
+func (f *fakeScheduleManager) Reschedule(_ context.Context, id uint, scheduledAt int64) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id, ScheduledAt: scheduledAt}, nil
+}
+func (f *fakeScheduleManager) ReplaceContent(_ context.Context, id uint, rawMarkdown string) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id, RawMarkdown: rawMarkdown}, nil
+}
+
 func newPrivateTestHandler(lists *fakeListManager, mail *fakeMailDispatcher, pub ed25519.PublicKey) *PrivateHandler {
-	return NewPrivateHandler(lists, mail, pub, slog.Default())
+	return NewPrivateHandler(lists, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, pub, slog.Default())
 }
 
 func privateRequest(t *testing.T, h *PrivateHandler, method, target string, body any) *httptest.ResponseRecorder {
@@ -493,6 +565,156 @@ func TestPrivateHandler_SendTestMail(t *testing.T) {
 	})
 }
 
+// --- newsletter tests ---
+
+func TestPrivateHandler_AllNewsletters(t *testing.T) {
+	now := time.Now()
+	n := &domain.SentNewsletter{
+		ID:           1,
+		Subject:      "Weekly Digest",
+		SenderName:   "Bot",
+		SentAt:       now,
+		MailingLists: []domain.MailingList{{Name: "weekly"}},
+	}
+
+	t.Run("returns all newsletters", func(t *testing.T) {
+		nl := newFakeNewsletterArchive(n)
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		w := privateRequest(t, h, http.MethodGet, "/newsletters", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+		}
+		var resp []newsletterSummaryResponse
+		decodeJSON(t, w, &resp)
+		if len(resp) != 1 {
+			t.Fatalf("expected 1 newsletter, got %d", len(resp))
+		}
+		if resp[0].Subject != "Weekly Digest" {
+			t.Errorf("expected subject %q, got %q", "Weekly Digest", resp[0].Subject)
+		}
+		if len(resp[0].MailingLists) != 1 || resp[0].MailingLists[0] != "weekly" {
+			t.Errorf("unexpected mailing lists: %v", resp[0].MailingLists)
+		}
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		nl := newFakeNewsletterArchive()
+		nl.getAllErr = errors.New("db failure")
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		w := privateRequest(t, h, http.MethodGet, "/newsletters", nil)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", w.Code)
+		}
+	})
+}
+
+func TestPrivateHandler_GetNewsletter(t *testing.T) {
+	now := time.Now()
+	confirmed := now
+	n := &domain.SentNewsletter{
+		ID:           42,
+		Subject:      "Issue #1",
+		SenderName:   "Editor",
+		RawMarkdown:  "# Hello",
+		SentAt:       now,
+		Recipients:   []domain.User{{ID: 1, Name: "Alice", Email: "alice@example.com", ConfirmedAt: &confirmed}},
+		MailingLists: []domain.MailingList{{Name: "monthly"}},
+	}
+
+	t.Run("returns newsletter detail", func(t *testing.T) {
+		nl := newFakeNewsletterArchive(n)
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/newsletters/42", nil)
+		req.SetPathValue("id", "42")
+		w := httptest.NewRecorder()
+		h.handleGetNewsletter(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+		}
+		var resp newsletterDetailResponse
+		decodeJSON(t, w, &resp)
+		if resp.Subject != "Issue #1" {
+			t.Errorf("expected subject %q, got %q", "Issue #1", resp.Subject)
+		}
+		if resp.RawMarkdown != "# Hello" {
+			t.Errorf("expected raw %q, got %q", "# Hello", resp.RawMarkdown)
+		}
+		if len(resp.Recipients) != 1 || resp.Recipients[0].Email != "alice@example.com" {
+			t.Errorf("unexpected recipients: %+v", resp.Recipients)
+		}
+		if len(resp.MailingLists) != 1 || resp.MailingLists[0] != "monthly" {
+			t.Errorf("unexpected mailing lists: %v", resp.MailingLists)
+		}
+	})
+
+	t.Run("returns 404 when not found", func(t *testing.T) {
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/newsletters/99", nil)
+		req.SetPathValue("id", "99")
+		w := httptest.NewRecorder()
+		h.handleGetNewsletter(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", w.Code)
+		}
+	})
+
+	t.Run("returns 400 on invalid id", func(t *testing.T) {
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/newsletters/abc", nil)
+		req.SetPathValue("id", "abc")
+		w := httptest.NewRecorder()
+		h.handleGetNewsletter(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
+		}
+	})
+}
+
+func TestPrivateHandler_DeleteNewsletter(t *testing.T) {
+	now := time.Now()
+	n := &domain.SentNewsletter{ID: 7, Subject: "Old", SentAt: now}
+
+	t.Run("returns 204 on success", func(t *testing.T) {
+		nl := newFakeNewsletterArchive(n)
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodDelete, "/newsletters/7", nil)
+		req.SetPathValue("id", "7")
+		w := httptest.NewRecorder()
+		h.handleDeleteNewsletter(w, req)
+		if w.Code != http.StatusNoContent {
+			t.Errorf("expected 204, got %d", w.Code)
+		}
+		if _, exists := nl.newsletters[7]; exists {
+			t.Error("newsletter should have been deleted")
+		}
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		nl := newFakeNewsletterArchive(n)
+		nl.deleteErr = errors.New("db down")
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodDelete, "/newsletters/7", nil)
+		req.SetPathValue("id", "7")
+		w := httptest.NewRecorder()
+		h.handleDeleteNewsletter(w, req)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", w.Code)
+		}
+	})
+
+	t.Run("returns 400 on invalid id", func(t *testing.T) {
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		req := httptest.NewRequest(http.MethodDelete, "/newsletters/bad", nil)
+		req.SetPathValue("id", "bad")
+		w := httptest.NewRecorder()
+		h.handleDeleteNewsletter(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
+		}
+	})
+}
+
 // --- authentication tests ---
 
 func TestPrivateHandler_Auth(t *testing.T) {
@@ -550,7 +772,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	}
 	mail := &fakeMailDispatcher{}
 
-	srv := httptest.NewServer(NewPrivateHandler(m, mail, pub, slog.Default()).Routes())
+	srv := httptest.NewServer(NewPrivateHandler(m, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, pub, slog.Default()).Routes())
 	defer srv.Close()
 
 	client := NewPrivateClient(srv.URL, priv)

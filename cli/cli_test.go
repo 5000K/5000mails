@@ -118,10 +118,43 @@ func (f *fakeMailDispatcher) SendTestMail(_ context.Context, r domain.User, raw 
 
 // --- helpers ---
 
+type fakeNewsletterArchive struct{}
+
+func (f *fakeNewsletterArchive) AllNewsletters(_ context.Context) ([]domain.SentNewsletter, error) {
+	return nil, nil
+}
+
+func (f *fakeNewsletterArchive) GetNewsletter(_ context.Context, _ uint) (*domain.SentNewsletter, error) {
+	return nil, fmt.Errorf("not found")
+}
+
+func (f *fakeNewsletterArchive) DeleteNewsletter(_ context.Context, _ uint) error {
+	return nil
+}
+
 func startTestServer(t *testing.T, lm *fakeListManager, md *fakeMailDispatcher, pub ed25519.PublicKey) *httptest.Server {
 	t.Helper()
-	h := api.NewPrivateHandler(lm, md, pub, slog.Default())
+	h := api.NewPrivateHandler(lm, md, &fakeNewsletterArchive{}, &fakeScheduleManager{}, pub, slog.Default())
 	return httptest.NewServer(h.Routes())
+}
+
+type fakeScheduleManager struct{}
+
+func (f *fakeScheduleManager) Schedule(_ context.Context, list, raw string, at int64) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: 1, MailingListName: list, RawMarkdown: raw, ScheduledAt: at}, nil
+}
+func (f *fakeScheduleManager) List(_ context.Context) ([]domain.ScheduledMail, error) {
+	return nil, nil
+}
+func (f *fakeScheduleManager) Get(_ context.Context, id uint) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id}, nil
+}
+func (f *fakeScheduleManager) Delete(_ context.Context, _ uint) error { return nil }
+func (f *fakeScheduleManager) Reschedule(_ context.Context, id uint, at int64) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id, ScheduledAt: at}, nil
+}
+func (f *fakeScheduleManager) ReplaceContent(_ context.Context, id uint, raw string) (*domain.ScheduledMail, error) {
+	return &domain.ScheduledMail{ID: id, RawMarkdown: raw}, nil
 }
 
 func tmpRawFile(t *testing.T, content string) string {

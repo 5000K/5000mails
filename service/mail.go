@@ -10,21 +10,23 @@ import (
 // MailService renders markdown content and dispatches it to mailing list
 // recipients or arbitrary test addresses.
 type MailService struct {
-	lists    domain.MailingListRepository
-	users    domain.UserRepository
-	renderer domain.Renderer
-	sender   domain.Sender
-	baseURL  string
+	lists       domain.MailingListRepository
+	users       domain.UserRepository
+	newsletters domain.SentNewsletterRepository
+	renderer    domain.Renderer
+	sender      domain.Sender
+	baseURL     string
 }
 
 // NewMailService creates a new MailService.
-func NewMailService(lists domain.MailingListRepository, users domain.UserRepository, renderer domain.Renderer, sender domain.Sender, baseURL string) *MailService {
+func NewMailService(lists domain.MailingListRepository, users domain.UserRepository, newsletters domain.SentNewsletterRepository, renderer domain.Renderer, sender domain.Sender, baseURL string) *MailService {
 	return &MailService{
-		lists:    lists,
-		users:    users,
-		renderer: renderer,
-		sender:   sender,
-		baseURL:  baseURL,
+		lists:       lists,
+		users:       users,
+		newsletters: newsletters,
+		renderer:    renderer,
+		sender:      sender,
+		baseURL:     baseURL,
 	}
 }
 
@@ -46,7 +48,10 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 		return nil
 	}
 
-	for _, recipient := range recipients {
+	var firstMetadata domain.MailMetadata
+	recipientIDs := make([]uint, 0, len(recipients))
+
+	for i, recipient := range recipients {
 		recipientData := make(map[string]any, len(data)+2)
 		for k, v := range data {
 			recipientData[k] = v
@@ -58,10 +63,18 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 		if err != nil {
 			return fmt.Errorf("rendering mail for %q: %w", recipient.Email, err)
 		}
+		if i == 0 {
+			firstMetadata = metadata
+		}
 
 		if err := s.sender.SendMail(ctx, metadata, body, recipient); err != nil {
 			return fmt.Errorf("sending mail to %q: %w", recipient.Email, err)
 		}
+		recipientIDs = append(recipientIDs, recipient.ID)
+	}
+
+	if _, err := s.newsletters.CreateSentNewsletter(ctx, firstMetadata.Subject, firstMetadata.SenderName, raw, recipientIDs, []string{listName}); err != nil {
+		return fmt.Errorf("archiving sent newsletter: %w", err)
 	}
 
 	return nil
@@ -89,4 +102,60 @@ func (s *MailService) SendTestMail(ctx context.Context, recipient domain.User, r
 	}
 
 	return nil
+}
+
+// AllNewsletters returns all archived sent newsletters.
+func (s *MailService) AllNewsletters(ctx context.Context) ([]domain.SentNewsletter, error) {
+	newsletters, err := s.newsletters.GetAllSentNewsletters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing sent newsletters: %w", err)
+	}
+	return newsletters, nil
+}
+
+// GetNewsletter returns a single archived newsletter by ID including recipients and mailing lists.
+func (s *MailService) GetNewsletter(ctx context.Context, id uint) (*domain.SentNewsletter, error) {
+	newsletter, err := s.newsletters.GetSentNewsletterByID(ctx, id, true)
+	if err != nil {
+		return nil, fmt.Errorf("getting sent newsletter %d: %w", id, err)
+	}
+	return newsletter, nil
+}
+
+// DeleteNewsletter removes an archived newsletter by ID.
+func (s *MailService) DeleteNewsletter(ctx context.Context, id uint) error {
+	if err := s.newsletters.DeleteSentNewsletter(ctx, id); err != nil {
+		return fmt.Errorf("deleting sent newsletter %d: %w", id, err)
+	}
+	return nil
+}
+
+var placeholderUser = domain.User{Name: "Subscriber", Email: "you@example.com"}
+
+// RenderNewsletter renders a sent newsletter for a given unsubscribe token.
+// If the token is empty or unknown the render proceeds with a placeholder user,
+// so the response is identical in both cases and the token is not enumerable.
+func (s *MailService) RenderNewsletter(ctx context.Context, id uint, unsubscribeToken string) (string, error) {
+	newsletter, err := s.newsletters.GetSentNewsletterByID(ctx, id, false)
+	if err != nil {
+		return "", fmt.Errorf("loading newsletter %d: %w", id, err)
+	}
+
+	recipient := placeholderUser
+	if unsubscribeToken != "" {
+		if u, err := s.users.GetUserByUnsubscribeToken(ctx, unsubscribeToken); err == nil {
+			recipient = *u
+		}
+	}
+
+	data := map[string]any{
+		"Recipient":      recipient,
+		"unsubscribeURL": s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken,
+	}
+
+	_, body, err := s.renderer.Render(&newsletter.RawMarkdown, data)
+	if err != nil {
+		return "", fmt.Errorf("rendering newsletter %d: %w", id, err)
+	}
+	return body, nil
 }

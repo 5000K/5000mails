@@ -25,10 +25,28 @@ type ConfirmationRepository interface {
 	DeleteConfirmation(ctx context.Context, id uint) error
 }
 
+type SentNewsletterRepository interface {
+	CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*SentNewsletter, error)
+	GetAllSentNewsletters(ctx context.Context) ([]SentNewsletter, error)
+	GetSentNewsletterByID(ctx context.Context, id uint, withRecipients bool) (*SentNewsletter, error)
+	DeleteSentNewsletter(ctx context.Context, id uint) error
+}
+
 type Renderer interface {
 	Render(raw *string, data map[string]any) (metadata MailMetadata, body string, err error)
 }
 
 type Sender interface {
 	SendMail(ctx context.Context, metadata MailMetadata, body string, recipient User) error
+}
+
+type ScheduledMailRepository interface {
+	CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*ScheduledMail, error)
+	GetAllScheduledMails(ctx context.Context) ([]ScheduledMail, error)
+	GetScheduledMailByID(ctx context.Context, id uint) (*ScheduledMail, error)
+	GetPendingScheduledMails(ctx context.Context, now int64) ([]ScheduledMail, error)
+	UpdateScheduledMailTime(ctx context.Context, id uint, scheduledAt int64) (*ScheduledMail, error)
+	UpdateScheduledMailContent(ctx context.Context, id uint, rawMarkdown string) (*ScheduledMail, error)
+	MarkScheduledMailSent(ctx context.Context, id uint, sentAt int64) error
+	DeleteScheduledMail(ctx context.Context, id uint) error
 }
