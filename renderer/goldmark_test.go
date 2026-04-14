@@ -14,7 +14,7 @@ const testLayout = `Subject:{{.metadata.Subject}} Sender:{{.metadata.SenderName}
 
 func newRenderer(t *testing.T) *GoldmarkRenderer {
 	t.Helper()
-	r, err := NewGoldmarkRenderer([]byte(testLayout), nil, slog.Default())
+	r, err := NewGoldmarkRenderer([]byte(testLayout), slog.Default())
 	if err != nil {
 		t.Fatalf("NewGoldmarkRenderer: %v", err)
 	}
@@ -146,31 +146,15 @@ func TestRender_InvalidContentTemplateErrors(t *testing.T) {
 }
 
 func TestRender_InvalidLayoutTemplateErrors(t *testing.T) {
-	_, err := NewGoldmarkRenderer([]byte("{{.unclosed"), nil, slog.Default())
+	_, err := NewGoldmarkRenderer([]byte("{{.unclosed"), slog.Default())
 	if err == nil {
 		t.Fatal("expected error for invalid layout template, got nil")
 	}
 }
 
-func TestRender_ThemeInjectedIntoLayout(t *testing.T) {
-	layout := `<style>{{.theme}}</style>{{.html}}`
-	r, err := NewGoldmarkRenderer([]byte(layout), []byte("body{color:red}"), slog.Default())
-	if err != nil {
-		t.Fatalf("NewGoldmarkRenderer: %v", err)
-	}
-	raw := "---\nsubject: S\nsender: B\n---\nhi"
-	_, body, err := r.Render(&raw, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(body, "<style>body{color:red}</style>") {
-		t.Errorf("expected theme in layout output, got:\n%s", body)
-	}
-}
-
 func TestRender_FrontmatterInjectedIntoLayout(t *testing.T) {
 	layout := `{{.frontmatter.subject}} / {{.frontmatter.custom}}: {{.html}}`
-	r, err := NewGoldmarkRenderer([]byte(layout), nil, slog.Default())
+	r, err := NewGoldmarkRenderer([]byte(layout), slog.Default())
 	if err != nil {
 		t.Fatalf("NewGoldmarkRenderer: %v", err)
 	}
@@ -186,7 +170,7 @@ func TestRender_FrontmatterInjectedIntoLayout(t *testing.T) {
 
 func TestRender_ExtraDataPassedToLayout(t *testing.T) {
 	layout := `{{.customKey}}: {{.html}}`
-	r, err := NewGoldmarkRenderer([]byte(layout), nil, slog.Default())
+	r, err := NewGoldmarkRenderer([]byte(layout), slog.Default())
 	if err != nil {
 		t.Fatalf("NewGoldmarkRenderer: %v", err)
 	}

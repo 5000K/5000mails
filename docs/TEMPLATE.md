@@ -41,7 +41,6 @@ In addition to all variables above (and any custom `data`), the following keys a
 | `metadata.Subject`    | `string`              | Email subject from the `subject` frontmatter field                                              |
 | `metadata.SenderName` | `string`              | Sender display name from the `sender` frontmatter field                                         |
 | `frontmatter`         | `map[string]any`      | Raw key-value map of **all** frontmatter fields, including any custom ones (e.g. `{{.frontmatter.myField}}`) |
-| `theme`               | `string`              | Full CSS content loaded from the configured `theme` path                                        |
 
 ---
 

@@ -7,7 +7,7 @@ Configuration is loaded in two passes:
 
 YAML takes precedence over environment variables for every field that has both a `yaml:` tag and an `env:` tag. The config file path itself can only be set via `CONFIG_PATH`. If the file is not found, the server starts with environment-variable values only.
 
-Path values (template, theme, confirm-mail) accept either a local filesystem path or an `http(s)://` URL; the server fetches remote resources at startup.
+Path values (template, confirm-mail) accept either a local filesystem path or an `http(s)://` URL; the server fetches remote resources at startup.
 
 ---
 
@@ -73,7 +73,6 @@ All values accept a local path **or** an `http(s)://` URL. Remote resources are 
 | YAML key       | Environment variable   | Default (remote)                                                                      | Description                                                 |
 |----------------|------------------------|---------------------------------------------------------------------------------------|-------------------------------------------------------------|
 | `template`     | `TEMPLATE_PATH`        | `https://github.com/5000K/5000mails/releases/latest/download/template.html`           | HTML wrapper rendered around every markdown newsletter      |
-| `theme`        | `THEME_PATH`           | `https://github.com/5000K/5000mails/releases/latest/download/theme.example.css`       | CSS injected into the HTML template                         |
 | `confirm-mail` | `CONFIRM_MAIL_PATH`    | `https://github.com/5000K/5000mails/releases/latest/download/confirm.md`              | Markdown template for the double opt-in confirmation email  |
 
 See [docs/TEMPLATE.md](TEMPLATE.md) for a full reference of template variables available in the `confirm-mail` template and all other mail contexts.
@@ -119,7 +118,6 @@ auth:
 
 paths:
   template: "./static/template.html"
-  theme: "./static/theme.css"
   confirm-mail: "./static/confirm.md"
 
 redirects:

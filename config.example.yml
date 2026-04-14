@@ -20,7 +20,6 @@ auth:
 
 paths:
   template: "./static/template.html"   # HTML wrapper rendered around markdown content
-  theme: "./static/theme.example.css"          # CSS injected into the template
   confirm-mail: "./static/confirm.md"  # markdown template for the double opt-in email
 
 redirects:

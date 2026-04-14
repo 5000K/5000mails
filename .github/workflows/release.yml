@@ -50,8 +50,7 @@ jobs:
             --generate-notes \
             dist/* \
             static/confirm.md \
-            static/template.html \
-            static/theme.example.css
+            static/template.html
 
   docker:
     runs-on: ubuntu-latest
@@ -79,5 +78,3 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-
-
