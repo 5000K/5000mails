@@ -13,6 +13,7 @@ type fakeListRepo struct {
 	lists map[string]*domain.MailingList
 
 	createErr    error
+	getAllErr    error
 	getByNameErr error
 	updateErr    error
 	deleteErr    error
@@ -24,6 +25,17 @@ func newFakeListRepo(seed ...*domain.MailingList) *fakeListRepo {
 		r.lists[l.Name] = l
 	}
 	return r
+}
+
+func (r *fakeListRepo) GetAllLists(_ context.Context) ([]domain.MailingList, error) {
+	if r.getAllErr != nil {
+		return nil, r.getAllErr
+	}
+	out := make([]domain.MailingList, 0, len(r.lists))
+	for _, l := range r.lists {
+		out = append(out, *l)
+	}
+	return out, nil
 }
 
 func (r *fakeListRepo) CreateList(_ context.Context, name string) (*domain.MailingList, error) {

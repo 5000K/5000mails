@@ -183,3 +183,43 @@ func TestListService_CountUsers(t *testing.T) {
 		}
 	})
 }
+
+func TestListService_All(t *testing.T) {
+	list1 := &domain.MailingList{Name: "weekly"}
+	list2 := &domain.MailingList{Name: "monthly"}
+
+	t.Run("returns all lists", func(t *testing.T) {
+		svc := NewListService(newFakeListRepo(list1, list2), newFakeUserRepo())
+		got, err := svc.All(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 {
+			t.Errorf("expected 2 lists, got %d", len(got))
+		}
+	})
+
+	t.Run("returns empty slice when no lists exist", func(t *testing.T) {
+		svc := NewListService(newFakeListRepo(), newFakeUserRepo())
+		got, err := svc.All(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("expected empty slice, got %d elements", len(got))
+		}
+	})
+
+	t.Run("wraps repo error", func(t *testing.T) {
+		repo := newFakeListRepo()
+		repo.getAllErr = errors.New("db failure")
+		svc := NewListService(repo, newFakeUserRepo())
+		_, err := svc.All(context.Background())
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, repo.getAllErr) {
+			t.Errorf("expected wrapped repo error, got: %v", err)
+		}
+	})
+}

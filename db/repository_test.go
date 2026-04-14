@@ -69,6 +69,20 @@ func TestGetListByName_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetAllLists(t *testing.T) {
+	repo := newTestRepo(t)
+	repo.CreateList(context.Background(), "list-a")
+	repo.CreateList(context.Background(), "list-b")
+
+	lists, err := repo.GetAllLists(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(lists) != 2 {
+		t.Errorf("expected 2 lists, got %d", len(lists))
+	}
+}
+
 // ---------- User ----------
 
 func seedList(t *testing.T, repo *MailingListRepository, name string) string {

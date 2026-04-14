@@ -4,6 +4,7 @@ import "context"
 
 type MailingListRepository interface {
 	CreateList(ctx context.Context, name string) (*MailingList, error)
+	GetAllLists(ctx context.Context) ([]MailingList, error)
 	GetListByName(ctx context.Context, name string) (*MailingList, error)
 	RenameList(ctx context.Context, name, newName string) (*MailingList, error)
 	DeleteList(ctx context.Context, name string) error

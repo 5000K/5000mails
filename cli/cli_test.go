@@ -34,6 +34,14 @@ func newFakeListManager(lists ...*domain.MailingList) *fakeListManager {
 	return m
 }
 
+func (f *fakeListManager) All(_ context.Context) ([]domain.MailingList, error) {
+	out := make([]domain.MailingList, 0, len(f.lists))
+	for _, l := range f.lists {
+		out = append(out, *l)
+	}
+	return out, nil
+}
+
 func (f *fakeListManager) Create(_ context.Context, name string) (*domain.MailingList, error) {
 	l := &domain.MailingList{Name: name}
 	f.lists[name] = l
@@ -219,6 +227,28 @@ func TestRunUnknownCommand(t *testing.T) {
 }
 
 // --- list subcommand integration ---
+
+func TestListAll(t *testing.T) {
+	m := newFakeListManager(
+		&domain.MailingList{Name: "weekly"},
+		&domain.MailingList{Name: "monthly"},
+	)
+	srv := startTestServer(t, m, &fakeMailDispatcher{}, nil)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--server", srv.URL, "list", "all"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected 0, got %d: %s", code, stderr.String())
+	}
+	var resp []api.ListResponse
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Errorf("expected 2 lists, got %d", len(resp))
+	}
+}
 
 func TestListCreate(t *testing.T) {
 	m := newFakeListManager()

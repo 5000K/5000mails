@@ -60,6 +60,25 @@ type RecipientInput struct {
 	Email string `json:"email"`
 }
 
+// GetAllLists returns all mailing lists.
+func (c *PrivateClient) GetAllLists(ctx context.Context) ([]ListResponse, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/lists", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all lists: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("get all lists: %w", err)
+	}
+
+	var out []ListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("get all lists: decode response: %w", err)
+	}
+	return out, nil
+}
+
 // CreateList creates a new mailing list.
 func (c *PrivateClient) CreateList(ctx context.Context, name string) (*ListResponse, error) {
 	resp, err := c.do(ctx, http.MethodPost, "/lists", map[string]string{"name": name})

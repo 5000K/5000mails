@@ -25,6 +25,7 @@ type fakeListManager struct {
 	users []*domain.User
 
 	createErr     error
+	getAllErr     error
 	getErr        error
 	renameErr     error
 	deleteErr     error
@@ -38,6 +39,17 @@ func newFakeListManager(lists ...*domain.MailingList) *fakeListManager {
 		m.lists[l.Name] = l
 	}
 	return m
+}
+
+func (f *fakeListManager) All(_ context.Context) ([]domain.MailingList, error) {
+	if f.getAllErr != nil {
+		return nil, f.getAllErr
+	}
+	out := make([]domain.MailingList, 0, len(f.lists))
+	for _, l := range f.lists {
+		out = append(out, *l)
+	}
+	return out, nil
 }
 
 func (f *fakeListManager) Create(_ context.Context, name string) (*domain.MailingList, error) {
@@ -185,6 +197,35 @@ func decodeJSON(t *testing.T, w *httptest.ResponseRecorder, v any) {
 	if err := json.NewDecoder(w.Body).Decode(v); err != nil {
 		t.Fatalf("decode response: %v (body: %s)", err, w.Body.String())
 	}
+}
+
+func TestPrivateHandler_AllLists(t *testing.T) {
+	t.Run("returns all lists", func(t *testing.T) {
+		m := newFakeListManager(
+			&domain.MailingList{Name: "weekly"},
+			&domain.MailingList{Name: "monthly"},
+		)
+		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
+		w := privateRequest(t, h, http.MethodGet, "/lists", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+		}
+		var resp []listResponse
+		decodeJSON(t, w, &resp)
+		if len(resp) != 2 {
+			t.Errorf("expected 2 lists, got %d", len(resp))
+		}
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		m := newFakeListManager()
+		m.getAllErr = errors.New("db failure")
+		h := newPrivateTestHandler(m, &fakeMailDispatcher{}, nil)
+		w := privateRequest(t, h, http.MethodGet, "/lists", nil)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", w.Code)
+		}
+	})
 }
 
 // --- list tests ---

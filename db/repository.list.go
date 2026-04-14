@@ -8,6 +8,20 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
+func (r *MailingListRepository) GetAllLists(ctx context.Context) ([]domain.MailingList, error) {
+	var lists []MailingList
+	result := r.db.WithContext(ctx).Find(&lists)
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to get all mailing lists", slog.Any("error", result.Error))
+		return nil, fmt.Errorf("get all mailing lists: %w", result.Error)
+	}
+	out := make([]domain.MailingList, len(lists))
+	for i, l := range lists {
+		out[i] = *ToDomainList(&l)
+	}
+	return out, nil
+}
+
 func (r *MailingListRepository) CreateList(ctx context.Context, name string) (*domain.MailingList, error) {
 	list := &MailingList{Name: name}
 

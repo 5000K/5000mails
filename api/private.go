@@ -19,6 +19,7 @@ import (
 
 // ListManager is the private API's view of the list service.
 type ListManager interface {
+	All(ctx context.Context) ([]domain.MailingList, error)
 	Create(ctx context.Context, name string) (*domain.MailingList, error)
 	Get(ctx context.Context, name string) (*domain.MailingList, error)
 	Rename(ctx context.Context, name, newName string) (*domain.MailingList, error)
@@ -51,6 +52,7 @@ func NewPrivateHandler(lists ListManager, mail MailDispatcher, publicKey ed25519
 // Routes returns the mux for all private API endpoints.
 func (h *PrivateHandler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.Handle("GET /lists", h.auth(h.handleAllLists))
 	mux.Handle("POST /lists", h.auth(h.handleCreateList))
 	mux.Handle("GET /lists/{name}", h.auth(h.handleGetList))
 	mux.Handle("PUT /lists/{name}", h.auth(h.handleRenameList))
@@ -97,6 +99,20 @@ type testMailRequest struct {
 }
 
 // --- handlers ---
+
+func (h *PrivateHandler) handleAllLists(w http.ResponseWriter, r *http.Request) {
+	lists, err := h.lists.All(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "get all lists failed", slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to load lists")
+		return
+	}
+	resp := make([]listResponse, len(lists))
+	for i, l := range lists {
+		resp[i] = listResponse{Name: l.Name}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
 
 func (h *PrivateHandler) handleCreateList(w http.ResponseWriter, r *http.Request) {
 	var body struct {

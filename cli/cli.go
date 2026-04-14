@@ -19,6 +19,7 @@ Global flags:
   --private-key-path PATH  Path to Ed25519 private key file for authentication
 
 Commands:
+  list   all                                         List all mailing lists
   list   create   --name NAME                       Create a mailing list
   list   get      --name NAME                       Get list details and stats
   list   rename   --name NAME --new-name NEWNAME    Rename a mailing list
@@ -75,7 +76,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 func runList(args []string, serverURL, keyPath string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: 5kmcli list <create|get|rename|delete|users> [flags]")
+		fmt.Fprintln(stderr, "usage: 5kmcli list <all|create|get|rename|delete|users> [flags]")
 		return 1
 	}
 
@@ -89,6 +90,8 @@ func runList(args []string, serverURL, keyPath string, stdout, stderr io.Writer)
 	flags := args[1:]
 
 	switch sub {
+	case "all":
+		return listAll(client, stdout, stderr)
 	case "create":
 		return listCreate(flags, client, stdout, stderr)
 	case "get":
@@ -157,6 +160,16 @@ func runKeys(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "private key: %s\npublic key:  %s\n", privPath, pubPath)
+	return 0
+}
+
+func listAll(client *api.PrivateClient, stdout, stderr io.Writer) int {
+	resp, err := client.GetAllLists(context.Background())
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	printJSON(stdout, resp)
 	return 0
 }
 

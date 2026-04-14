@@ -18,6 +18,15 @@ func NewListService(lists domain.MailingListRepository, users domain.UserReposit
 	return &ListService{lists: lists, users: users}
 }
 
+// All returns all mailing lists.
+func (s *ListService) All(ctx context.Context) ([]domain.MailingList, error) {
+	lists, err := s.lists.GetAllLists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing all lists: %w", err)
+	}
+	return lists, nil
+}
+
 // Create creates a new mailing list with the given name.
 func (s *ListService) Create(ctx context.Context, name string) (*domain.MailingList, error) {
 	list, err := s.lists.CreateList(ctx, name)
