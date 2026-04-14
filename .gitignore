@@ -33,3 +33,7 @@ go.work.sum
 
 # Files marked local
 *.local.*
+
+# development artifacts
+5000mails.db
+5kmcli

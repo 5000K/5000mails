@@ -1,4 +1,4 @@
-public-addr: ":8080"
+public-addr: ":8081"
 private-addr: ":9000"
 base-url: "https://yoursite.com"  # used to build confirmation links in emails
 
@@ -16,8 +16,9 @@ db:
 
 auth:
   public-key-path: ""  # path to Ed25519 public key; leave empty to disable auth for the management api
+  # generate a key pair with `5kmcli keys generate --out-dir ~/.config/5kmcli`
 
 paths:
-  template: "./template.html"   # HTML wrapper rendered around markdown content
-  theme: "./theme.css"          # CSS injected into the template
-  confirm-mail: "./confirm.md"  # markdown template for the double opt-in email
+  template: "./static/template.html"   # HTML wrapper rendered around markdown content
+  theme: "./static/theme.example.css"          # CSS injected into the template
+  confirm-mail: "./static/confirm.md"  # markdown template for the double opt-in email

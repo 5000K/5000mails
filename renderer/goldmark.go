@@ -15,18 +15,20 @@ import (
 // GoldmarkRenderer implements domain.Renderer using Go templates and Goldmark.
 type GoldmarkRenderer struct {
 	tmpl   *template.Template
+	theme  string
 	logger *slog.Logger
 	md     goldmark.Markdown
 }
 
 // NewGoldmarkRenderer parses tmpl as a Go HTML template and returns a renderer.
-func NewGoldmarkRenderer(tmpl []byte, logger *slog.Logger) (*GoldmarkRenderer, error) {
+func NewGoldmarkRenderer(tmpl, theme []byte, logger *slog.Logger) (*GoldmarkRenderer, error) {
 	t, err := template.New("layout").Parse(string(tmpl))
 	if err != nil {
 		return nil, fmt.Errorf("parsing renderer layout template: %w", err)
 	}
 	return &GoldmarkRenderer{
 		tmpl:   t,
+		theme:  string(theme),
 		logger: logger,
 		md:     goldmark.New(),
 	}, nil
@@ -58,6 +60,7 @@ func (r *GoldmarkRenderer) Render(raw *string, data map[string]any) (domain.Mail
 	layoutData := mergeData(data, map[string]any{
 		"html":     htmlBuf.String(),
 		"metadata": metadata,
+		"theme":    r.theme,
 	})
 
 	var finalBuf bytes.Buffer

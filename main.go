@@ -53,7 +53,12 @@ func main() {
 		logger.Error("loading template", slog.String("path", cfg.Paths.Template), slog.Any("error", err))
 		os.Exit(1)
 	}
-	rndr, err := renderer.NewGoldmarkRenderer(tmplBytes, logger)
+	themeBytes, err := config.FetchResource(cfg.Paths.Theme)
+	if err != nil {
+		logger.Error("loading theme", slog.String("path", cfg.Paths.Theme), slog.Any("error", err))
+		os.Exit(1)
+	}
+	rndr, err := renderer.NewGoldmarkRenderer(tmplBytes, themeBytes, logger)
 	if err != nil {
 		logger.Error("creating renderer", slog.Any("error", err))
 		os.Exit(1)
