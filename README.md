@@ -1,8 +1,10 @@
 # 5000mails
 
-A markdown-oriented newsletter server. Signups, double opt-in, test-mails, markdown-based newsletters.
+A markdown-oriented newsletter platform. Signups, double opt-in, test-mails, markdown-based newsletters.
 
-Uses the same base conventions as [5000blogs](https://github.com/5000K/5000blogs) for rendering and templating, so that the same markdown-practices can be reused for your newsletter as well.
+It comes with a backend to manage self-serving user setup (signup, opt-in, unsubscribe) and a CLI that uses a private management API to facilitate all interactions your minimal newsletter really needs.
+
+This is a sibling project of [5000blogs](https://github.com/5000K/5000blogs).
 
 ## CLI
 
