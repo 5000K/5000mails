@@ -292,7 +292,7 @@ func (r *fakeNewsletterRepo) GetAllSentNewsletters(_ context.Context) ([]domain.
 	return out, nil
 }
 
-func (r *fakeNewsletterRepo) GetSentNewsletterByID(_ context.Context, id uint) (*domain.SentNewsletter, error) {
+func (r *fakeNewsletterRepo) GetSentNewsletterByID(_ context.Context, id uint, _ bool) (*domain.SentNewsletter, error) {
 	if r.getErr != nil {
 		return nil, r.getErr
 	}

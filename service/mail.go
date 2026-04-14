@@ -115,7 +115,7 @@ func (s *MailService) AllNewsletters(ctx context.Context) ([]domain.SentNewslett
 
 // GetNewsletter returns a single archived newsletter by ID including recipients and mailing lists.
 func (s *MailService) GetNewsletter(ctx context.Context, id uint) (*domain.SentNewsletter, error) {
-	newsletter, err := s.newsletters.GetSentNewsletterByID(ctx, id)
+	newsletter, err := s.newsletters.GetSentNewsletterByID(ctx, id, true)
 	if err != nil {
 		return nil, fmt.Errorf("getting sent newsletter %d: %w", id, err)
 	}
@@ -128,4 +128,34 @@ func (s *MailService) DeleteNewsletter(ctx context.Context, id uint) error {
 		return fmt.Errorf("deleting sent newsletter %d: %w", id, err)
 	}
 	return nil
+}
+
+var placeholderUser = domain.User{Name: "Subscriber", Email: "you@example.com"}
+
+// RenderNewsletter renders a sent newsletter for a given unsubscribe token.
+// If the token is empty or unknown the render proceeds with a placeholder user,
+// so the response is identical in both cases and the token is not enumerable.
+func (s *MailService) RenderNewsletter(ctx context.Context, id uint, unsubscribeToken string) (string, error) {
+	newsletter, err := s.newsletters.GetSentNewsletterByID(ctx, id, false)
+	if err != nil {
+		return "", fmt.Errorf("loading newsletter %d: %w", id, err)
+	}
+
+	recipient := placeholderUser
+	if unsubscribeToken != "" {
+		if u, err := s.users.GetUserByUnsubscribeToken(ctx, unsubscribeToken); err == nil {
+			recipient = *u
+		}
+	}
+
+	data := map[string]any{
+		"Recipient":      recipient,
+		"unsubscribeURL": s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken,
+	}
+
+	_, body, err := s.renderer.Render(&newsletter.RawMarkdown, data)
+	if err != nil {
+		return "", fmt.Errorf("rendering newsletter %d: %w", id, err)
+	}
+	return body, nil
 }

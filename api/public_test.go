@@ -45,12 +45,26 @@ func (f *fakeSubscriber) Unsubscribe(_ context.Context, token string) error {
 	return f.unsubscribeErr
 }
 
+type fakeNewsletterPreviewer struct {
+	body string
+	err  error
+
+	lastID    uint
+	lastToken string
+}
+
+func (f *fakeNewsletterPreviewer) RenderNewsletter(_ context.Context, id uint, token string) (string, error) {
+	f.lastID = id
+	f.lastToken = token
+	return f.body, f.err
+}
+
 func newTestHandler(sub *fakeSubscriber) *PublicHandler {
-	return NewPublicHandler(sub, RedirectPages{}, slog.Default())
+	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, RedirectPages{}, slog.Default())
 }
 
 func newTestHandlerWithRedirects(sub *fakeSubscriber, redirects RedirectPages) *PublicHandler {
-	return NewPublicHandler(sub, redirects, slog.Default())
+	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, redirects, slog.Default())
 }
 
 func TestHandleSubscribe(t *testing.T) {
@@ -376,6 +390,87 @@ func TestRedirectPages(t *testing.T) {
 		}
 		if loc := w.Header().Get("Location"); loc != redirects.UnsubscribeError {
 			t.Errorf("expected Location %q, got %q", redirects.UnsubscribeError, loc)
+		}
+	})
+}
+func TestHandleNewsletterPreview(t *testing.T) {
+	t.Run("returns rendered HTML for valid id without token", func(t *testing.T) {
+		previewer := &fakeNewsletterPreviewer{body: "<html><body>Hello</body></html>"}
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/mail/42", nil)
+		req.SetPathValue("id", "42")
+		w := httptest.NewRecorder()
+		h.handleNewsletterPreview(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+			t.Errorf("expected text/html content-type, got %q", ct)
+		}
+		if w.Body.String() != "<html><body>Hello</body></html>" {
+			t.Errorf("unexpected body: %s", w.Body)
+		}
+		if previewer.lastID != 42 {
+			t.Errorf("expected id 42, got %d", previewer.lastID)
+		}
+		if previewer.lastToken != "" {
+			t.Errorf("expected empty token, got %q", previewer.lastToken)
+		}
+	})
+
+	t.Run("passes token to previewer when provided", func(t *testing.T) {
+		previewer := &fakeNewsletterPreviewer{body: "<html/>"}
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/mail/7?token=abc123", nil)
+		req.SetPathValue("id", "7")
+		w := httptest.NewRecorder()
+		h.handleNewsletterPreview(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		if previewer.lastToken != "abc123" {
+			t.Errorf("expected token %q, got %q", "abc123", previewer.lastToken)
+		}
+	})
+
+	t.Run("returns 400 on non-numeric id", func(t *testing.T) {
+		h := NewPublicHandler(&fakeSubscriber{}, &fakeNewsletterPreviewer{}, RedirectPages{}, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/mail/abc", nil)
+		req.SetPathValue("id", "abc")
+		w := httptest.NewRecorder()
+		h.handleNewsletterPreview(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("returns 404 when newsletter not found regardless of token", func(t *testing.T) {
+		previewer := &fakeNewsletterPreviewer{err: errors.New("not found")}
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+
+		for _, token := range []string{"", "some-token"} {
+			req := httptest.NewRequest(http.MethodGet, "/mail/99?token="+token, nil)
+			req.SetPathValue("id", "99")
+			w := httptest.NewRecorder()
+			h.handleNewsletterPreview(w, req)
+
+			if w.Code != http.StatusNotFound {
+				t.Errorf("token=%q: expected 404, got %d", token, w.Code)
+			}
+		}
+	})
+
+	t.Run("preview is routed via Routes()", func(t *testing.T) {
+		previewer := &fakeNewsletterPreviewer{body: "<p>hi</p>"}
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		req := httptest.NewRequest(http.MethodGet, "/mail/1", nil)
+		w := httptest.NewRecorder()
+		h.Routes().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
 		}
 	})
 }

@@ -276,3 +276,71 @@ func TestMailService_SendTestMail(t *testing.T) {
 		}
 	})
 }
+
+func TestMailService_RenderNewsletter(t *testing.T) {
+	stored := &domain.SentNewsletter{ID: 1, RawMarkdown: "# Hello"}
+	user := &domain.User{ID: 1, Name: "Alice", Email: "alice@example.com", UnsubscribeToken: "tok-abc"}
+
+	t.Run("renders with matched user when token is valid", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: domain.MailMetadata{}, body: "rendered"}
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(user), newFakeNewsletterRepo(stored), renderer, &fakeSender{}, "https://example.com")
+
+		body, err := svc.RenderNewsletter(context.Background(), 1, "tok-abc")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if body != "rendered" {
+			t.Errorf("expected body %q, got %q", "rendered", body)
+		}
+		got, _ := renderer.lastData["Recipient"].(domain.User)
+		if got.Email != user.Email {
+			t.Errorf("expected recipient email %q, got %q", user.Email, got.Email)
+		}
+	})
+
+	t.Run("renders with placeholder when token is empty", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: domain.MailMetadata{}, body: "rendered"}
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(user), newFakeNewsletterRepo(stored), renderer, &fakeSender{}, "https://example.com")
+
+		if _, err := svc.RenderNewsletter(context.Background(), 1, ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, _ := renderer.lastData["Recipient"].(domain.User)
+		if got.Email != placeholderUser.Email {
+			t.Errorf("expected placeholder email %q, got %q", placeholderUser.Email, got.Email)
+		}
+	})
+
+	t.Run("renders with placeholder when token is unknown", func(t *testing.T) {
+		renderer := &fakeRenderer{metadata: domain.MailMetadata{}, body: "rendered"}
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), newFakeNewsletterRepo(stored), renderer, &fakeSender{}, "https://example.com")
+
+		if _, err := svc.RenderNewsletter(context.Background(), 1, "unknown-token"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, _ := renderer.lastData["Recipient"].(domain.User)
+		if got.Email != placeholderUser.Email {
+			t.Errorf("expected placeholder email %q, got %q", placeholderUser.Email, got.Email)
+		}
+	})
+
+	t.Run("wraps newsletter not found error", func(t *testing.T) {
+		newsletterRepo := newFakeNewsletterRepo()
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), newsletterRepo, &fakeRenderer{}, &fakeSender{}, "https://example.com")
+
+		_, err := svc.RenderNewsletter(context.Background(), 99, "")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("wraps renderer error", func(t *testing.T) {
+		renderErr := errors.New("bad template")
+		svc := NewMailService(newFakeListRepo(), newFakeUserRepo(), newFakeNewsletterRepo(stored), &fakeRenderer{err: renderErr}, &fakeSender{}, "https://example.com")
+
+		_, err := svc.RenderNewsletter(context.Background(), 1, "")
+		if !errors.Is(err, renderErr) {
+			t.Errorf("expected wrapped render error, got: %v", err)
+		}
+	})
+}

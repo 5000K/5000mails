@@ -28,7 +28,7 @@ type ConfirmationRepository interface {
 type SentNewsletterRepository interface {
 	CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*SentNewsletter, error)
 	GetAllSentNewsletters(ctx context.Context) ([]SentNewsletter, error)
-	GetSentNewsletterByID(ctx context.Context, id uint) (*SentNewsletter, error)
+	GetSentNewsletterByID(ctx context.Context, id uint, withRecipients bool) (*SentNewsletter, error)
 	DeleteSentNewsletter(ctx context.Context, id uint) error
 }
 

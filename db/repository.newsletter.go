@@ -54,9 +54,13 @@ func (r *MailingListRepository) GetAllSentNewsletters(ctx context.Context) ([]do
 	return ToDomainSentNewsletters(records), nil
 }
 
-func (r *MailingListRepository) GetSentNewsletterByID(ctx context.Context, id uint) (*domain.SentNewsletter, error) {
+func (r *MailingListRepository) GetSentNewsletterByID(ctx context.Context, id uint, withRecipients bool) (*domain.SentNewsletter, error) {
 	var record SentNewsletter
-	result := r.db.WithContext(ctx).Preload("Recipients").Preload("MailingLists").First(&record, id)
+	q := r.db.WithContext(ctx).Preload("MailingLists")
+	if withRecipients {
+		q = q.Preload("Recipients")
+	}
+	result := q.First(&record, id)
 	if result.Error != nil {
 		r.logger.ErrorContext(ctx, "failed to get sent newsletter",
 			slog.Uint64("id", uint64(id)),

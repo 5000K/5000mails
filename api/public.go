@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/5000K/5000mails/domain"
@@ -15,6 +16,10 @@ type Subscriber interface {
 	Subscribe(ctx context.Context, listName, userName, email string) (*domain.User, error)
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, unsubscribeToken string) error
+}
+
+type NewsletterPreviewer interface {
+	RenderNewsletter(ctx context.Context, id uint, unsubscribeToken string) (string, error)
 }
 
 type RedirectPages struct {
@@ -28,12 +33,13 @@ type RedirectPages struct {
 
 type PublicHandler struct {
 	subscriptions Subscriber
+	newsletters   NewsletterPreviewer
 	redirects     RedirectPages
 	logger        *slog.Logger
 }
 
-func NewPublicHandler(subscriptions Subscriber, redirects RedirectPages, logger *slog.Logger) *PublicHandler {
-	return &PublicHandler{subscriptions: subscriptions, redirects: redirects, logger: logger}
+func NewPublicHandler(subscriptions Subscriber, newsletters NewsletterPreviewer, redirects RedirectPages, logger *slog.Logger) *PublicHandler {
+	return &PublicHandler{subscriptions: subscriptions, newsletters: newsletters, redirects: redirects, logger: logger}
 }
 
 func (h *PublicHandler) Routes() *http.ServeMux {
@@ -41,6 +47,7 @@ func (h *PublicHandler) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /{listName}/subscribe", h.handleSubscribe)
 	mux.HandleFunc("GET /confirm/{token}", h.handleConfirm)
 	mux.HandleFunc("GET /unsubscribe/{token}", h.handleUnsubscribe)
+	mux.HandleFunc("GET /mail/{id}", h.handleNewsletterPreview)
 	return mux
 }
 
@@ -94,6 +101,30 @@ func (h *PublicHandler) handleUnsubscribe(w http.ResponseWriter, r *http.Request
 	}
 
 	redirectOrJSON(w, r, h.redirects.UnsubscribeSuccess, http.StatusOK, map[string]string{"message": "you have been unsubscribed"})
+}
+
+func (h *PublicHandler) handleNewsletterPreview(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid newsletter id")
+		return
+	}
+
+	token := r.URL.Query().Get("token")
+	body, err := h.newsletters.RenderNewsletter(r.Context(), uint(id), token)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "newsletter preview failed",
+			slog.Uint64("id", id),
+			slog.Any("error", err),
+		)
+		writeError(w, http.StatusNotFound, "newsletter not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, body)
 }
 
 func redirectOrJSON(w http.ResponseWriter, r *http.Request, redirectURL string, status int, v any) {
