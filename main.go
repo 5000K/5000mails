@@ -67,7 +67,7 @@ func main() {
 
 	subscriptionSvc := service.NewSubscriptionService(repo, repo, repo, rndr, sender, string(confirmRaw), cfg.BaseURL)
 	listSvc := service.NewListService(repo, repo)
-	mailSvc := service.NewMailService(repo, repo, rndr, sender, cfg.BaseURL)
+	mailSvc := service.NewMailService(repo, repo, repo, rndr, sender, cfg.BaseURL)
 
 	publicHandler := api.NewPublicHandler(subscriptionSvc, api.RedirectPages{
 		SubscribeSuccess:   cfg.Redirects.SubscribeSuccess,
@@ -90,7 +90,7 @@ func main() {
 		logger.Warn("private API authentication disabled - no public key configured")
 	}
 
-	privateHandler := api.NewPrivateHandler(listSvc, mailSvc, publicKey, logger)
+	privateHandler := api.NewPrivateHandler(listSvc, mailSvc, mailSvc, publicKey, logger)
 
 	publicServer := &http.Server{Addr: cfg.PublicAddr, Handler: publicHandler.Routes()}
 	privateServer := &http.Server{Addr: cfg.PrivateAddr, Handler: privateHandler.Routes()}

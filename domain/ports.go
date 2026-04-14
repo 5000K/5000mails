@@ -25,6 +25,13 @@ type ConfirmationRepository interface {
 	DeleteConfirmation(ctx context.Context, id uint) error
 }
 
+type SentNewsletterRepository interface {
+	CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*SentNewsletter, error)
+	GetAllSentNewsletters(ctx context.Context) ([]SentNewsletter, error)
+	GetSentNewsletterByID(ctx context.Context, id uint) (*SentNewsletter, error)
+	DeleteSentNewsletter(ctx context.Context, id uint) error
+}
+
 type Renderer interface {
 	Render(raw *string, data map[string]any) (metadata MailMetadata, body string, err error)
 }

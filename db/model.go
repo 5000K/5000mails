@@ -76,3 +76,36 @@ func ToGORMConfirmation(c *domain.Confirmation) *Confirmation {
 		Token:  c.Token,
 	}
 }
+
+type SentNewsletter struct {
+	gorm.Model
+	Subject      string
+	SenderName   string
+	RawMarkdown  string
+	Recipients   []User        `gorm:"many2many:sent_newsletter_recipients;"`
+	MailingLists []MailingList `gorm:"many2many:sent_newsletter_mailing_lists;"`
+}
+
+func ToDomainSentNewsletter(n *SentNewsletter) *domain.SentNewsletter {
+	lists := make([]domain.MailingList, len(n.MailingLists))
+	for i, l := range n.MailingLists {
+		lists[i] = *ToDomainList(&l)
+	}
+	return &domain.SentNewsletter{
+		ID:           n.ID,
+		Subject:      n.Subject,
+		SenderName:   n.SenderName,
+		RawMarkdown:  n.RawMarkdown,
+		SentAt:       n.CreatedAt,
+		Recipients:   ToDomainUsers(n.Recipients),
+		MailingLists: lists,
+	}
+}
+
+func ToDomainSentNewsletters(newsletters []SentNewsletter) []domain.SentNewsletter {
+	result := make([]domain.SentNewsletter, len(newsletters))
+	for i := range newsletters {
+		result[i] = *ToDomainSentNewsletter(&newsletters[i])
+	}
+	return result
+}

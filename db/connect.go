@@ -32,7 +32,7 @@ func Connect(dbType string, dsn string) (*gorm.DB, error) {
 }
 
 func AutoMigrate(database *gorm.DB) error {
-	if err := database.AutoMigrate(&MailingList{}, &User{}, &Confirmation{}); err != nil {
+	if err := database.AutoMigrate(&MailingList{}, &User{}, &Confirmation{}, &SentNewsletter{}); err != nil {
 		return fmt.Errorf("auto-migrating database: %w", err)
 	}
 	return nil

@@ -39,3 +39,14 @@ type UserCounts struct {
 	Total     int
 	Confirmed int
 }
+
+// SentNewsletter is an archived record of a dispatched newsletter.
+type SentNewsletter struct {
+	ID           uint
+	Subject      string
+	SenderName   string
+	RawMarkdown  string
+	SentAt       time.Time
+	Recipients   []User
+	MailingLists []MailingList
+}
