@@ -83,19 +83,27 @@ func (r *fakeListRepo) DeleteList(_ context.Context, name string) error {
 }
 
 type fakeUserRepo struct {
-	users  map[uint]*domain.User
-	nextID uint
+	users        map[uint]*domain.User
+	deletedUsers map[uint]*domain.User
+	nextID       uint
 
-	addErr                   error
-	confirmErr               error
-	getByUnsubscribeTokenErr error
-	getUsersErr              error
-	getConfirmedErr          error
-	removeErr                error
+	addErr                    error
+	confirmErr                error
+	getByEmailErr             error
+	getUnsubscribedByEmailErr error
+	getByUnsubscribeTokenErr  error
+	getUsersErr               error
+	getConfirmedErr           error
+	removeErr                 error
+	reactivateErr             error
 }
 
 func newFakeUserRepo(seed ...*domain.User) *fakeUserRepo {
-	r := &fakeUserRepo{users: make(map[uint]*domain.User), nextID: 1}
+	r := &fakeUserRepo{
+		users:        make(map[uint]*domain.User),
+		deletedUsers: make(map[uint]*domain.User),
+		nextID:       1,
+	}
 	for _, u := range seed {
 		r.users[u.ID] = u
 		if u.ID >= r.nextID {
@@ -103,6 +111,13 @@ func newFakeUserRepo(seed ...*domain.User) *fakeUserRepo {
 		}
 	}
 	return r
+}
+
+func (r *fakeUserRepo) seedDeleted(u *domain.User) {
+	r.deletedUsers[u.ID] = u
+	if u.ID >= r.nextID {
+		r.nextID = u.ID + 1
+	}
 }
 
 func (r *fakeUserRepo) AddUser(_ context.Context, mailingListName string, name, email, unsubscribeToken string) (*domain.User, error) {
@@ -166,14 +181,56 @@ func (r *fakeUserRepo) GetConfirmedUsers(_ context.Context, mailingListName stri
 	return out, nil
 }
 
+func (r *fakeUserRepo) GetUserByEmail(_ context.Context, mailingListName, email string) (*domain.User, error) {
+	if r.getByEmailErr != nil {
+		return nil, r.getByEmailErr
+	}
+	for _, u := range r.users {
+		if u.MailingListName == mailingListName && u.Email == email {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("user with email %q in list %q not found", email, mailingListName)
+}
+
+func (r *fakeUserRepo) GetUnsubscribedUserByEmail(_ context.Context, mailingListName, email string) (*domain.User, error) {
+	if r.getUnsubscribedByEmailErr != nil {
+		return nil, r.getUnsubscribedByEmailErr
+	}
+	for _, u := range r.deletedUsers {
+		if u.MailingListName == mailingListName && u.Email == email {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("unsubscribed user with email %q in list %q not found", email, mailingListName)
+}
+
+func (r *fakeUserRepo) ReactivateUser(_ context.Context, userID uint, name, unsubscribeToken string) (*domain.User, error) {
+	if r.reactivateErr != nil {
+		return nil, r.reactivateErr
+	}
+	u, ok := r.deletedUsers[userID]
+	if !ok {
+		return nil, fmt.Errorf("deleted user %d not found", userID)
+	}
+	u.Name = name
+	u.UnsubscribeToken = unsubscribeToken
+	u.ConfirmedAt = nil
+	delete(r.deletedUsers, userID)
+	r.users[userID] = u
+	return u, nil
+}
+
 func (r *fakeUserRepo) RemoveUser(_ context.Context, userID uint) error {
 	if r.removeErr != nil {
 		return r.removeErr
 	}
-	if _, ok := r.users[userID]; !ok {
+	u, ok := r.users[userID]
+	if !ok {
 		return fmt.Errorf("user %d not found", userID)
 	}
 	delete(r.users, userID)
+	r.deletedUsers[userID] = u
 	return nil
 }
 
@@ -181,9 +238,10 @@ type fakeConfirmationRepo struct {
 	confirmations map[uint]*domain.Confirmation
 	nextID        uint
 
-	createErr error
-	getErr    error
-	deleteErr error
+	createErr         error
+	getErr            error
+	deleteErr         error
+	deleteByUserIDErr error
 }
 
 func newFakeConfirmationRepo(seed ...*domain.Confirmation) *fakeConfirmationRepo {
@@ -227,6 +285,18 @@ func (r *fakeConfirmationRepo) DeleteConfirmation(_ context.Context, id uint) er
 		return fmt.Errorf("confirmation %d not found", id)
 	}
 	delete(r.confirmations, id)
+	return nil
+}
+
+func (r *fakeConfirmationRepo) DeleteConfirmationsByUserID(_ context.Context, userID uint) error {
+	if r.deleteByUserIDErr != nil {
+		return r.deleteByUserIDErr
+	}
+	for id, c := range r.confirmations {
+		if c.UserID == userID {
+			delete(r.confirmations, id)
+		}
+	}
 	return nil
 }
 

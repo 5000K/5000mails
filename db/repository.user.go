@@ -65,6 +65,63 @@ func (r *MailingListRepository) ConfirmUser(ctx context.Context, userID uint) er
 	return nil
 }
 
+func (r *MailingListRepository) GetUserByEmail(ctx context.Context, mailingListName, email string) (*domain.User, error) {
+	var user User
+
+	result := r.db.WithContext(ctx).
+		Where("mailing_list_name = ? AND email = ?", mailingListName, email).
+		First(&user)
+	if result.Error != nil {
+		return nil, fmt.Errorf("get user by email: %w", result.Error)
+	}
+
+	return ToDomainUser(&user), nil
+}
+
+func (r *MailingListRepository) GetUnsubscribedUserByEmail(ctx context.Context, mailingListName, email string) (*domain.User, error) {
+	var user User
+
+	result := r.db.WithContext(ctx).
+		Unscoped().
+		Where("mailing_list_name = ? AND email = ? AND deleted_at IS NOT NULL", mailingListName, email).
+		First(&user)
+	if result.Error != nil {
+		return nil, fmt.Errorf("get unsubscribed user by email: %w", result.Error)
+	}
+
+	return ToDomainUser(&user), nil
+}
+
+func (r *MailingListRepository) ReactivateUser(ctx context.Context, userID uint, name, unsubscribeToken string) (*domain.User, error) {
+	result := r.db.WithContext(ctx).
+		Unscoped().
+		Model(&User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"deleted_at":        nil,
+			"confirmed_at":      nil,
+			"name":              name,
+			"unsubscribe_token": unsubscribeToken,
+		})
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to reactivate user",
+			slog.Uint64("user_id", uint64(userID)),
+			slog.Any("error", result.Error),
+		)
+		return nil, fmt.Errorf("reactivate user: %w", result.Error)
+	}
+
+	var user User
+	if err := r.db.WithContext(ctx).First(&user, userID).Error; err != nil {
+		return nil, fmt.Errorf("reactivate user fetch: %w", err)
+	}
+
+	r.logger.InfoContext(ctx, "reactivated user",
+		slog.Uint64("user_id", uint64(userID)),
+	)
+	return ToDomainUser(&user), nil
+}
+
 func (r *MailingListRepository) GetUserByUnsubscribeToken(ctx context.Context, token string) (*domain.User, error) {
 	var user User
 
@@ -171,6 +228,22 @@ func (r *MailingListRepository) GetConfirmationByToken(ctx context.Context, toke
 	}
 
 	return ToDomainConfirmation(&c), nil
+}
+
+func (r *MailingListRepository) DeleteConfirmationsByUserID(ctx context.Context, userID uint) error {
+	result := r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&Confirmation{})
+	if result.Error != nil {
+		r.logger.ErrorContext(ctx, "failed to delete confirmations by user ID",
+			slog.Uint64("user_id", uint64(userID)),
+			slog.Any("error", result.Error),
+		)
+		return fmt.Errorf("delete confirmations by user ID: %w", result.Error)
+	}
+	r.logger.InfoContext(ctx, "deleted confirmations for user",
+		slog.Uint64("user_id", uint64(userID)),
+		slog.Int64("count", result.RowsAffected),
+	)
+	return nil
 }
 
 func (r *MailingListRepository) DeleteConfirmation(ctx context.Context, id uint) error {
