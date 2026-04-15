@@ -49,49 +49,51 @@ func (s *MailService) SendToList(ctx context.Context, listName string, raw strin
 		return nil
 	}
 
-	var firstMetadata domain.MailMetadata
-	recipientIDs := make([]uint, 0, len(recipients))
+	metadata, _, err := s.renderer.Render(&raw, s.buildRecipientData(data, recipients[0], listName, ""))
+	if err != nil {
+		return fmt.Errorf("extracting mail metadata: %w", err)
+	}
 
-	for i, recipient := range recipients {
-		recipientData := make(map[string]any, len(data)+3)
-		for k, v := range data {
-			recipientData[k] = v
-		}
-		recipientData["Recipient"] = recipient
-		recipientData["unsubscribeURL"] = s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken
-		recipientData["preferencesURL"] = s.baseURL + "/preferences/" + listName + "/" + recipient.UnsubscribeToken
+	recipientIDs := make([]uint, len(recipients))
+	for i, r := range recipients {
+		recipientIDs[i] = r.ID
+	}
 
-		metadata, body, err := s.renderer.Render(&raw, recipientData)
+	newsletter, err := s.newsletters.CreateSentNewsletter(ctx, metadata.Subject, metadata.SenderName, raw, recipientIDs, []string{listName}, topicNames)
+	if err != nil {
+		return fmt.Errorf("archiving sent newsletter: %w", err)
+	}
+
+	for _, recipient := range recipients {
+		previewURL := fmt.Sprintf("%s/mail/%d?token=%s", s.baseURL, newsletter.ID, recipient.UnsubscribeToken)
+		metadata, body, err := s.renderer.Render(&raw, s.buildRecipientData(data, recipient, listName, previewURL))
 		if err != nil {
 			return fmt.Errorf("rendering mail for %q: %w", recipient.Email, err)
 		}
-		if i == 0 {
-			firstMetadata = metadata
-		}
-
 		if err := s.sender.SendMail(ctx, metadata, body, recipient); err != nil {
 			return fmt.Errorf("sending mail to %q: %w", recipient.Email, err)
 		}
-		recipientIDs = append(recipientIDs, recipient.ID)
-	}
-
-	if _, err := s.newsletters.CreateSentNewsletter(ctx, firstMetadata.Subject, firstMetadata.SenderName, raw, recipientIDs, []string{listName}, topicNames); err != nil {
-		return fmt.Errorf("archiving sent newsletter: %w", err)
 	}
 
 	return nil
 }
 
-func (s *MailService) SendTestMail(ctx context.Context, recipient domain.User, raw string, data map[string]any) error {
-	recipientData := make(map[string]any, len(data)+3)
-	for k, v := range data {
-		recipientData[k] = v
+func (s *MailService) buildRecipientData(base map[string]any, recipient domain.User, listName, previewURL string) map[string]any {
+	d := make(map[string]any, len(base)+4)
+	for k, v := range base {
+		d[k] = v
 	}
-	recipientData["Recipient"] = recipient
-	recipientData["unsubscribeURL"] = s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken
-	recipientData["preferencesURL"] = s.baseURL + "/preferences/" + recipient.MailingListName + "/" + recipient.UnsubscribeToken
+	d["Recipient"] = recipient
+	d["unsubscribeURL"] = s.baseURL + "/unsubscribe/" + recipient.UnsubscribeToken
+	d["preferencesURL"] = s.baseURL + "/preferences/" + listName + "/" + recipient.UnsubscribeToken
+	if previewURL != "" {
+		d["previewURL"] = previewURL
+	}
+	return d
+}
 
-	metadata, body, err := s.renderer.Render(&raw, recipientData)
+func (s *MailService) SendTestMail(ctx context.Context, recipient domain.User, raw string, data map[string]any) error {
+	metadata, body, err := s.renderer.Render(&raw, s.buildRecipientData(data, recipient, recipient.MailingListName, ""))
 	if err != nil {
 		return fmt.Errorf("rendering test mail for %q: %w", recipient.Email, err)
 	}

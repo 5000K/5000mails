@@ -13,18 +13,20 @@ Both stages share the same data map, which is populated automatically with the v
 
 The table shows which variables are automatically injected in each sending context. Custom variables passed via `data` are always available on top of these.
 
-| Variable                     | Type          | Confirm mail | Mail to list | Test mail | Description                                                                  |
-| ---------------------------- | ------------- | :----------: | :----------: | :-------: | ---------------------------------------------------------------------------- |
-| `Recipient`                  | `domain.User` |      ✓       |      ✓       |     ✓     | The recipient of this mail (see fields below)                                |
-| `Recipient.ID`               | `uint`        |      ✓       |      ✓       |     ✓     | Database ID of the subscriber                                                |
-| `Recipient.Name`             | `string`      |      ✓       |      ✓       |     ✓     | Display name                                                                 |
-| `Recipient.Email`            | `string`      |      ✓       |      ✓       |     ✓     | Email address                                                                |
-| `Recipient.MailingListName`  | `string`      |      ✓       |      ✓       |     ✓     | Name of the mailing list the subscriber belongs to                           |
-| `Recipient.UnsubscribeToken` | `string`      |      ✓       |      ✓       |     ✓     | Opaque token used to build unsubscribe links                                 |
-| `Recipient.ConfirmedAt`      | `*time.Time`  |      ✗¹      |      ✓       |     ✗     | Timestamp of double opt-in confirmation (`nil` if unconfirmed)               |
-| `confirmURL`                 | `string`      |      ✓       |      ✗       |     ✗     | Full URL the subscriber must visit to confirm (`baseURL/confirm/<token>`)    |
-| `token`                      | `string`      |      ✓       |      ✗       |     ✗     | Raw confirmation token (same value as the last path segment of `confirmURL`) |
-| `unsubscribeURL`             | `string`      |      ✗       |      ✓       |     ✗     | Full URL to unsubscribe (`baseURL/unsubscribe/<UnsubscribeToken>`)           |
+| Variable                     | Type          | Confirm mail | Mail to list | Test mail | Description                                                                                                                           |
+| ---------------------------- | ------------- | :----------: | :----------: | :-------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `Recipient`                  | `domain.User` |      ✓       |      ✓       |     ✓     | The recipient of this mail (see fields below)                                                                                         |
+| `Recipient.ID`               | `uint`        |      ✓       |      ✓       |     ✓     | Database ID of the subscriber                                                                                                         |
+| `Recipient.Name`             | `string`      |      ✓       |      ✓       |     ✓     | Display name                                                                                                                          |
+| `Recipient.Email`            | `string`      |      ✓       |      ✓       |     ✓     | Email address                                                                                                                         |
+| `Recipient.MailingListName`  | `string`      |      ✓       |      ✓       |     ✓     | Name of the mailing list the subscriber belongs to                                                                                    |
+| `Recipient.UnsubscribeToken` | `string`      |      ✓       |      ✓       |     ✓     | Opaque token used to build unsubscribe links                                                                                          |
+| `Recipient.ConfirmedAt`      | `*time.Time`  |      ✗¹      |      ✓       |     ✗     | Timestamp of double opt-in confirmation (`nil` if unconfirmed)                                                                        |
+| `confirmURL`                 | `string`      |      ✓       |      ✗       |     ✗     | Full URL the subscriber must visit to confirm (`baseURL/confirm/<token>`)                                                             |
+| `token`                      | `string`      |      ✓       |      ✗       |     ✗     | Raw confirmation token (same value as the last path segment of `confirmURL`)                                                          |
+| `preferencesURL`             | `string`      |      ✗       |      ✓       |     ✗     | Full URL to manage preferences (`baseURL/preferences/<list-name>/<Token>`)                                                                    |
+| `unsubscribeURL`             | `string`      |      ✗       |      ✓       |     ✗     | Full URL to unsubscribe (`baseURL/unsubscribe/<UnsubscribeToken>`)                                                                    |
+| `previewURL`                 | `string`      |      ✗       |      ✓       |     ✗     | Full URL to view this newsletter in a browser, personalised with the recipient's token (`baseURL/mail/<id>?token=<UnsubscribeToken>`) |
 
 > ¹ Always `nil` in the confirmation mail — the user has not confirmed yet.
 
@@ -34,12 +36,12 @@ The table shows which variables are automatically injected in each sending conte
 
 In addition to all variables above (and any custom `data`), the following keys are injected exclusively when the HTML layout template (`template.html`) is executed:
 
-| Variable              | Type                  | Description                                                                                     |
-| --------------------- | --------------------- | ----------------------------------------------------------------------------------------------- |
-| `html`                | `string`              | Rendered HTML produced from the Markdown body                                                   |
-| `metadata`            | `domain.MailMetadata` | Typed, parsed frontmatter (see fields below)                                                    |
-| `metadata.Subject`    | `string`              | Email subject from the `subject` frontmatter field                                              |
-| `metadata.SenderName` | `string`              | Sender display name from the `sender` frontmatter field                                         |
+| Variable              | Type                  | Description                                                                                                  |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `html`                | `string`              | Rendered HTML produced from the Markdown body                                                                |
+| `metadata`            | `domain.MailMetadata` | Typed, parsed frontmatter (see fields below)                                                                 |
+| `metadata.Subject`    | `string`              | Email subject from the `subject` frontmatter field                                                           |
+| `metadata.SenderName` | `string`              | Sender display name from the `sender` frontmatter field                                                      |
 | `frontmatter`         | `map[string]any`      | Raw key-value map of **all** frontmatter fields, including any custom ones (e.g. `{{.frontmatter.myField}}`) |
 
 ---
@@ -59,11 +61,11 @@ sender: "Your Newsletter Name"
 Body starts here…
 ```
 
-| Field        | Description                                                                               |
-|--------------|-------------------------------------------------------------------------------------------|
-| `subject`    | Email subject line                                                                        |
-| `sender`     | Sender display name shown by mail clients                                                 |
-| *(any key)*  | Custom fields — accessible in the HTML layout template via `{{.frontmatter.yourField}}`  |
+| Field       | Description                                                                             |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `subject`   | Email subject line                                                                      |
+| `sender`    | Sender display name shown by mail clients                                               |
+| _(any key)_ | Custom fields — accessible in the HTML layout template via `{{.frontmatter.yourField}}` |
 
 ---
 
@@ -96,6 +98,8 @@ Hello {{.Recipient.Name}},
 
 Welcome to this week's edition…
 
+[View in browser]({{.previewURL}})
+
 [Unsubscribe]({{.unsubscribeURL}})
 ```
 
@@ -106,7 +110,7 @@ Welcome to this week's edition…
   <head>
     <title>{{.metadata.Subject}}</title>
     <!-- custom frontmatter field -->
-    <meta name="description" content="{{.frontmatter.description}}">
+    <meta name="description" content="{{.frontmatter.description}}" />
   </head>
   <body>
     {{.html}}
