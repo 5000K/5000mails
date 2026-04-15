@@ -10,14 +10,10 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-// ListMailSender can send a rendered markdown newsletter to a mailing list.
 type ListMailSender interface {
-	SendToList(ctx context.Context, listName string, raw string, data map[string]any) error
+	SendToList(ctx context.Context, listName string, raw string, topicNames []string, data map[string]any) error
 }
 
-// SchedulingService persists and dispatches scheduled mails.
-// It polls for due mails at a fixed interval and delegates sending to a
-// ListMailSender so it carries no rendering or SMTP logic itself.
 type SchedulingService struct {
 	repo     domain.ScheduledMailRepository
 	mailer   ListMailSender
@@ -27,7 +23,6 @@ type SchedulingService struct {
 	stop     chan struct{}
 }
 
-// NewSchedulingService creates a SchedulingService that polls every interval.
 func NewSchedulingService(repo domain.ScheduledMailRepository, mailer ListMailSender, interval time.Duration, logger *slog.Logger) *SchedulingService {
 	return &SchedulingService{
 		repo:     repo,
@@ -38,13 +33,10 @@ func NewSchedulingService(repo domain.ScheduledMailRepository, mailer ListMailSe
 	}
 }
 
-// Start launches the background polling loop.
-// Call Stop to shut it down.
 func (s *SchedulingService) Start() {
 	go s.loop()
 }
 
-// Stop signals the polling loop to exit.
 func (s *SchedulingService) Stop() {
 	close(s.stop)
 }
@@ -76,7 +68,7 @@ func (s *SchedulingService) dispatchDue() {
 	}
 
 	for _, m := range pending {
-		if err := s.mailer.SendToList(ctx, m.MailingListName, m.RawMarkdown, nil); err != nil {
+		if err := s.mailer.SendToList(ctx, m.MailingListName, m.RawMarkdown, m.TopicNames, nil); err != nil {
 			s.logger.ErrorContext(ctx, "sending scheduled mail",
 				slog.Uint64("id", uint64(m.ID)),
 				slog.String("list", m.MailingListName),
@@ -94,16 +86,14 @@ func (s *SchedulingService) dispatchDue() {
 	}
 }
 
-// Schedule creates a new scheduled mail entry.
-func (s *SchedulingService) Schedule(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error) {
-	m, err := s.repo.CreateScheduledMail(ctx, mailingListName, rawMarkdown, scheduledAt)
+func (s *SchedulingService) Schedule(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64, topicNames []string) (*domain.ScheduledMail, error) {
+	m, err := s.repo.CreateScheduledMail(ctx, mailingListName, rawMarkdown, scheduledAt, topicNames)
 	if err != nil {
 		return nil, fmt.Errorf("scheduling mail for list %q: %w", mailingListName, err)
 	}
 	return m, nil
 }
 
-// List returns all scheduled mails (including already-sent ones).
 func (s *SchedulingService) List(ctx context.Context) ([]domain.ScheduledMail, error) {
 	mails, err := s.repo.GetAllScheduledMails(ctx)
 	if err != nil {
@@ -112,7 +102,6 @@ func (s *SchedulingService) List(ctx context.Context) ([]domain.ScheduledMail, e
 	return mails, nil
 }
 
-// Get returns a single scheduled mail by ID.
 func (s *SchedulingService) Get(ctx context.Context, id uint) (*domain.ScheduledMail, error) {
 	m, err := s.repo.GetScheduledMailByID(ctx, id)
 	if err != nil {
@@ -121,7 +110,6 @@ func (s *SchedulingService) Get(ctx context.Context, id uint) (*domain.Scheduled
 	return m, nil
 }
 
-// Delete removes a scheduled mail.
 func (s *SchedulingService) Delete(ctx context.Context, id uint) error {
 	if err := s.repo.DeleteScheduledMail(ctx, id); err != nil {
 		return fmt.Errorf("deleting scheduled mail %d: %w", id, err)
@@ -129,7 +117,6 @@ func (s *SchedulingService) Delete(ctx context.Context, id uint) error {
 	return nil
 }
 
-// Reschedule changes the target delivery time of a scheduled mail.
 func (s *SchedulingService) Reschedule(ctx context.Context, id uint, scheduledAt int64) (*domain.ScheduledMail, error) {
 	m, err := s.repo.UpdateScheduledMailTime(ctx, id, scheduledAt)
 	if err != nil {
@@ -138,7 +125,6 @@ func (s *SchedulingService) Reschedule(ctx context.Context, id uint, scheduledAt
 	return m, nil
 }
 
-// ReplaceContent replaces the markdown body of a scheduled mail.
 func (s *SchedulingService) ReplaceContent(ctx context.Context, id uint, rawMarkdown string) (*domain.ScheduledMail, error) {
 	m, err := s.repo.UpdateScheduledMailContent(ctx, id, rawMarkdown)
 	if err != nil {

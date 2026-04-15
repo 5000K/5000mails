@@ -104,7 +104,7 @@ type fakeMailDispatcher struct {
 	lastRecipient domain.User
 }
 
-func (f *fakeMailDispatcher) SendToList(_ context.Context, listName, raw string, _ map[string]any) error {
+func (f *fakeMailDispatcher) SendToList(_ context.Context, listName, raw string, _ []string, _ map[string]any) error {
 	f.lastListName = listName
 	f.lastRaw = raw
 	return nil
@@ -134,13 +134,13 @@ func (f *fakeNewsletterArchive) DeleteNewsletter(_ context.Context, _ uint) erro
 
 func startTestServer(t *testing.T, lm *fakeListManager, md *fakeMailDispatcher, pub ed25519.PublicKey) *httptest.Server {
 	t.Helper()
-	h := api.NewPrivateHandler(lm, md, &fakeNewsletterArchive{}, &fakeScheduleManager{}, pub, slog.Default())
+	h := api.NewPrivateHandler(lm, md, &fakeNewsletterArchive{}, &fakeScheduleManager{}, nil, pub, slog.Default())
 	return httptest.NewServer(h.Routes())
 }
 
 type fakeScheduleManager struct{}
 
-func (f *fakeScheduleManager) Schedule(_ context.Context, list, raw string, at int64) (*domain.ScheduledMail, error) {
+func (f *fakeScheduleManager) Schedule(_ context.Context, list, raw string, at int64, _ []string) (*domain.ScheduledMail, error) {
 	return &domain.ScheduledMail{ID: 1, MailingListName: list, RawMarkdown: raw, ScheduledAt: at}, nil
 }
 func (f *fakeScheduleManager) List(_ context.Context) ([]domain.ScheduledMail, error) {

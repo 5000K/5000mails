@@ -28,7 +28,19 @@ Commands:
   list     delete   --name NAME                       Delete a mailing list
   list     users    --name NAME                       List subscribers
 
+  topic    list     --list NAME                       List topics for a list
+  topic    create   --list NAME --name NAME           Create a topic
+                    [--display-name DISPLAY]
+                    [--default-enabled]
+                    [--subscribe-existing]
+  topic    get      --list NAME --name NAME           Get topic details
+  topic    update   --list NAME --name NAME           Update a topic
+                    [--display-name DISPLAY]
+                    [--default-enabled BOOL]
+  topic    delete   --list NAME --name NAME           Delete a topic
+
   send     list     --list NAME --raw-path PATH       Send mail immediately
+                    [--topics T1,T2,...]              Target specific topics
                     [--at ISO8601] [--timezone TZ]    Schedule instead of sending immediately
   send     test     --email EMAIL --raw-path PATH     Send a test mail
                     [--name NAME]
@@ -75,6 +87,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	switch command {
 	case "list":
 		return runList(rest, serverURL, keyPath, stdout, stderr)
+	case "topic":
+		return runTopic(rest, serverURL, keyPath, stdout, stderr)
 	case "send":
 		return runSend(rest, serverURL, keyPath, stdout, stderr)
 	case "schedule":
@@ -267,7 +281,7 @@ func sendList(args []string, client *api.PrivateClient, stdout, stderr io.Writer
 	listName := flagValue(args, "--list")
 	rawPath := flagValue(args, "--raw-path")
 	if listName == "" || rawPath == "" {
-		fmt.Fprintln(stderr, "usage: 5kmcli send list --list NAME --raw-path PATH [--at ISO8601] [--timezone TZ] [--data KEY=VALUE ...]")
+		fmt.Fprintln(stderr, "usage: 5kmcli send list --list NAME --raw-path PATH [--topics T1,T2,...] [--at ISO8601] [--timezone TZ] [--data KEY=VALUE ...]")
 		return 1
 	}
 	raw, err := os.ReadFile(rawPath)
@@ -276,6 +290,8 @@ func sendList(args []string, client *api.PrivateClient, stdout, stderr io.Writer
 		return 1
 	}
 
+	topicNames := collectTopics(args)
+
 	atStr := flagValue(args, "--at")
 	if atStr != "" {
 		scheduledAt, err := parseTimestamp(atStr, flagValue(args, "--timezone"))
@@ -283,7 +299,7 @@ func sendList(args []string, client *api.PrivateClient, stdout, stderr io.Writer
 			fmt.Fprintf(stderr, "error parsing --at: %v\n", err)
 			return 1
 		}
-		m, err := client.ScheduleMail(context.Background(), listName, string(raw), scheduledAt)
+		m, err := client.ScheduleMail(context.Background(), listName, string(raw), scheduledAt, topicNames)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
@@ -293,7 +309,7 @@ func sendList(args []string, client *api.PrivateClient, stdout, stderr io.Writer
 	}
 
 	data := collectData(args)
-	if err := client.SendToList(context.Background(), listName, string(raw), data); err != nil {
+	if err := client.SendToList(context.Background(), listName, string(raw), topicNames, data); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
@@ -321,6 +337,130 @@ func sendTest(args []string, client *api.PrivateClient, stdout, stderr io.Writer
 		return 1
 	}
 	fmt.Fprintln(stdout, "test mail sent")
+	return 0
+}
+
+func runTopic(args []string, serverURL, keyPath string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic <list|create|get|update|delete> [flags]")
+		return 1
+	}
+
+	client, err := buildClient(serverURL, keyPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+
+	sub := args[0]
+	flags := args[1:]
+
+	switch sub {
+	case "list":
+		return topicList(flags, client, stdout, stderr)
+	case "create":
+		return topicCreate(flags, client, stdout, stderr)
+	case "get":
+		return topicGet(flags, client, stdout, stderr)
+	case "update":
+		return topicUpdate(flags, client, stdout, stderr)
+	case "delete":
+		return topicDelete(flags, client, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown topic subcommand: %s\n", sub)
+		return 1
+	}
+}
+
+func topicList(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
+	listName := flagValue(args, "--list")
+	if listName == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic list --list NAME")
+		return 1
+	}
+	topics, err := client.ListTopics(context.Background(), listName)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	printJSON(stdout, topics)
+	return 0
+}
+
+func topicCreate(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
+	listName := flagValue(args, "--list")
+	name := flagValue(args, "--name")
+	if listName == "" || name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic create --list NAME --name NAME [--display-name DISPLAY] [--default-enabled] [--subscribe-existing]")
+		return 1
+	}
+	displayName := flagValue(args, "--display-name")
+	if displayName == "" {
+		displayName = name
+	}
+	defaultEnabled := flagBool(args, "--default-enabled")
+	subscribeExisting := flagBool(args, "--subscribe-existing")
+	t, err := client.CreateTopic(context.Background(), listName, name, displayName, defaultEnabled, subscribeExisting)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	printJSON(stdout, t)
+	return 0
+}
+
+func topicGet(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
+	listName := flagValue(args, "--list")
+	name := flagValue(args, "--name")
+	if listName == "" || name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic get --list NAME --name NAME")
+		return 1
+	}
+	t, err := client.GetTopic(context.Background(), listName, name)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	printJSON(stdout, t)
+	return 0
+}
+
+func topicUpdate(args []string, client *api.PrivateClient, stdout, stderr io.Writer) int {
+	listName := flagValue(args, "--list")
+	name := flagValue(args, "--name")
+	if listName == "" || name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic update --list NAME --name NAME [--display-name DISPLAY] [--default-enabled BOOL]")
+		return 1
+	}
+	var displayName *string
+	if dn := flagValue(args, "--display-name"); dn != "" {
+		displayName = &dn
+	}
+	var defaultEnabled *bool
+	if de := flagValue(args, "--default-enabled"); de != "" {
+		b := de == "true"
+		defaultEnabled = &b
+	}
+	t, err := client.UpdateTopic(context.Background(), listName, name, displayName, defaultEnabled)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	printJSON(stdout, t)
+	return 0
+}
+
+func topicDelete(args []string, client *api.PrivateClient, stderr io.Writer) int {
+	listName := flagValue(args, "--list")
+	name := flagValue(args, "--name")
+	if listName == "" || name == "" {
+		fmt.Fprintln(stderr, "usage: 5kmcli topic delete --list NAME --name NAME")
+		return 1
+	}
+	if err := client.DeleteTopic(context.Background(), listName, name); err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
@@ -381,6 +521,30 @@ func collectData(args []string) map[string]any {
 		return nil
 	}
 	return data
+}
+
+func collectTopics(args []string) []string {
+	raw := flagValue(args, "--topics")
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func flagBool(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
 }
 
 func printJSON(w io.Writer, v any) {

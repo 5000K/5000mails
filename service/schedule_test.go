@@ -38,13 +38,13 @@ func newFakeScheduledMailRepo(seed ...*domain.ScheduledMail) *fakeScheduledMailR
 	return r
 }
 
-func (r *fakeScheduledMailRepo) CreateScheduledMail(_ context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error) {
+func (r *fakeScheduledMailRepo) CreateScheduledMail(_ context.Context, mailingListName, rawMarkdown string, scheduledAt int64, topicNames []string) (*domain.ScheduledMail, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.createErr != nil {
 		return nil, r.createErr
 	}
-	m := &domain.ScheduledMail{ID: r.nextID, MailingListName: mailingListName, RawMarkdown: rawMarkdown, ScheduledAt: scheduledAt}
+	m := &domain.ScheduledMail{ID: r.nextID, MailingListName: mailingListName, RawMarkdown: rawMarkdown, ScheduledAt: scheduledAt, TopicNames: topicNames}
 	r.nextID++
 	r.mails[m.ID] = m
 	return m, nil
@@ -154,17 +154,18 @@ type fakeListMailSender struct {
 }
 
 type listSendCall struct {
-	listName string
-	raw      string
+	listName   string
+	raw        string
+	topicNames []string
 }
 
-func (s *fakeListMailSender) SendToList(_ context.Context, listName string, raw string, _ map[string]any) error {
+func (s *fakeListMailSender) SendToList(_ context.Context, listName string, raw string, topicNames []string, _ map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return s.err
 	}
-	s.calls = append(s.calls, listSendCall{listName: listName, raw: raw})
+	s.calls = append(s.calls, listSendCall{listName: listName, raw: raw, topicNames: topicNames})
 	return nil
 }
 
@@ -180,7 +181,7 @@ func TestSchedulingService_Schedule(t *testing.T) {
 	repo := newFakeScheduledMailRepo()
 	svc := newTestSchedulingService(repo, &fakeListMailSender{})
 
-	m, err := svc.Schedule(context.Background(), "newsletter", "# Hello", 1_000_000)
+	m, err := svc.Schedule(context.Background(), "newsletter", "# Hello", 1_000_000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestSchedulingService_Schedule_RepoError(t *testing.T) {
 	repo.createErr = fmt.Errorf("db error")
 	svc := newTestSchedulingService(repo, &fakeListMailSender{})
 
-	_, err := svc.Schedule(context.Background(), "newsletter", "# Hello", 1_000_000)
+	_, err := svc.Schedule(context.Background(), "newsletter", "# Hello", 1_000_000, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

@@ -25,8 +25,23 @@ type ConfirmationRepository interface {
 	DeleteConfirmation(ctx context.Context, id uint) error
 }
 
+type TopicRepository interface {
+	CreateTopic(ctx context.Context, mailingListName, name, displayName string, defaultEnabled bool) (*Topic, error)
+	GetTopicsByList(ctx context.Context, mailingListName string) ([]Topic, error)
+	GetTopicByName(ctx context.Context, mailingListName, name string) (*Topic, error)
+	UpdateTopic(ctx context.Context, mailingListName, name string, displayName *string, defaultEnabled *bool) (*Topic, error)
+	DeleteTopic(ctx context.Context, mailingListName, name string) error
+	GetDefaultEnabledTopics(ctx context.Context, mailingListName string) ([]Topic, error)
+	SubscribeUserToTopics(ctx context.Context, userID uint, topicIDs []uint) error
+	UnsubscribeUserFromTopics(ctx context.Context, userID uint, topicIDs []uint) error
+	SetUserTopics(ctx context.Context, userID uint, topicIDs []uint) error
+	GetUserTopics(ctx context.Context, userID uint) ([]Topic, error)
+	GetConfirmedUsersSubscribedToTopics(ctx context.Context, mailingListName string, topicNames []string) ([]User, error)
+	SubscribeAllUsersToTopic(ctx context.Context, mailingListName string, topicID uint) error
+}
+
 type SentNewsletterRepository interface {
-	CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*SentNewsletter, error)
+	CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string, topicNames []string) (*SentNewsletter, error)
 	GetAllSentNewsletters(ctx context.Context) ([]SentNewsletter, error)
 	GetSentNewsletterByID(ctx context.Context, id uint, withRecipients bool) (*SentNewsletter, error)
 	DeleteSentNewsletter(ctx context.Context, id uint) error
@@ -34,6 +49,7 @@ type SentNewsletterRepository interface {
 
 type Renderer interface {
 	Render(raw *string, data map[string]any) (metadata MailMetadata, body string, err error)
+	RenderHTML(html string, data map[string]any) (string, error)
 }
 
 type Sender interface {
@@ -41,7 +57,7 @@ type Sender interface {
 }
 
 type ScheduledMailRepository interface {
-	CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*ScheduledMail, error)
+	CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64, topicNames []string) (*ScheduledMail, error)
 	GetAllScheduledMails(ctx context.Context) ([]ScheduledMail, error)
 	GetScheduledMailByID(ctx context.Context, id uint) (*ScheduledMail, error)
 	GetPendingScheduledMails(ctx context.Context, now int64) ([]ScheduledMail, error)

@@ -26,7 +26,7 @@ type fakeSubscriber struct {
 	lastUnsubToken string
 }
 
-func (f *fakeSubscriber) Subscribe(_ context.Context, listName, _, email string) (*domain.User, error) {
+func (f *fakeSubscriber) Subscribe(_ context.Context, listName, _, email string, _ []string) (*domain.User, error) {
 	f.lastListName = listName
 	f.lastEmail = email
 	if f.subscribeErr != nil {
@@ -60,11 +60,11 @@ func (f *fakeNewsletterPreviewer) RenderNewsletter(_ context.Context, id uint, t
 }
 
 func newTestHandler(sub *fakeSubscriber) *PublicHandler {
-	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, RedirectPages{}, slog.Default())
+	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, nil, nil, nil, RedirectPages{}, slog.Default())
 }
 
 func newTestHandlerWithRedirects(sub *fakeSubscriber, redirects RedirectPages) *PublicHandler {
-	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, redirects, slog.Default())
+	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, nil, nil, nil, redirects, slog.Default())
 }
 
 func TestHandleSubscribe(t *testing.T) {
@@ -396,7 +396,7 @@ func TestRedirectPages(t *testing.T) {
 func TestHandleNewsletterPreview(t *testing.T) {
 	t.Run("returns rendered HTML for valid id without token", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<html><body>Hello</body></html>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/42", nil)
 		req.SetPathValue("id", "42")
 		w := httptest.NewRecorder()
@@ -421,7 +421,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("passes token to previewer when provided", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<html/>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/7?token=abc123", nil)
 		req.SetPathValue("id", "7")
 		w := httptest.NewRecorder()
@@ -436,7 +436,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 	})
 
 	t.Run("returns 400 on non-numeric id", func(t *testing.T) {
-		h := NewPublicHandler(&fakeSubscriber{}, &fakeNewsletterPreviewer{}, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, &fakeNewsletterPreviewer{}, nil, nil, nil, RedirectPages{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/abc", nil)
 		req.SetPathValue("id", "abc")
 		w := httptest.NewRecorder()
@@ -449,7 +449,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("returns 404 when newsletter not found regardless of token", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{err: errors.New("not found")}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
 
 		for _, token := range []string{"", "some-token"} {
 			req := httptest.NewRequest(http.MethodGet, "/mail/99?token="+token, nil)
@@ -465,7 +465,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("preview is routed via Routes()", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<p>hi</p>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/1", nil)
 		w := httptest.NewRecorder()
 		h.Routes().ServeHTTP(w, req)
