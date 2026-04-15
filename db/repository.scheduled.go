@@ -8,11 +8,16 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-func (r *MailingListRepository) CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error) {
+func (r *MailingListRepository) CreateScheduledMail(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64, topicNames []string) (*domain.ScheduledMail, error) {
+	topics := make([]ScheduledMailTopic, len(topicNames))
+	for i, name := range topicNames {
+		topics[i] = ScheduledMailTopic{TopicName: name}
+	}
 	m := &ScheduledMail{
 		MailingListName: mailingListName,
 		RawMarkdown:     rawMarkdown,
 		ScheduledAt:     scheduledAt,
+		Topics:          topics,
 	}
 	result := r.db.WithContext(ctx).Create(m)
 	if result.Error != nil {
@@ -23,7 +28,7 @@ func (r *MailingListRepository) CreateScheduledMail(ctx context.Context, mailing
 
 func (r *MailingListRepository) GetAllScheduledMails(ctx context.Context) ([]domain.ScheduledMail, error) {
 	var mails []ScheduledMail
-	result := r.db.WithContext(ctx).Order("scheduled_at asc").Find(&mails)
+	result := r.db.WithContext(ctx).Preload("Topics").Order("scheduled_at asc").Find(&mails)
 	if result.Error != nil {
 		return nil, fmt.Errorf("listing scheduled mails: %w", result.Error)
 	}
@@ -32,7 +37,7 @@ func (r *MailingListRepository) GetAllScheduledMails(ctx context.Context) ([]dom
 
 func (r *MailingListRepository) GetScheduledMailByID(ctx context.Context, id uint) (*domain.ScheduledMail, error) {
 	var m ScheduledMail
-	result := r.db.WithContext(ctx).First(&m, id)
+	result := r.db.WithContext(ctx).Preload("Topics").First(&m, id)
 	if result.Error != nil {
 		return nil, fmt.Errorf("getting scheduled mail %d: %w", id, result.Error)
 	}
@@ -42,6 +47,7 @@ func (r *MailingListRepository) GetScheduledMailByID(ctx context.Context, id uin
 func (r *MailingListRepository) GetPendingScheduledMails(ctx context.Context, now int64) ([]domain.ScheduledMail, error) {
 	var mails []ScheduledMail
 	result := r.db.WithContext(ctx).
+		Preload("Topics").
 		Where("scheduled_at <= ? AND sent_at IS NULL", now).
 		Order("scheduled_at asc").
 		Find(&mails)

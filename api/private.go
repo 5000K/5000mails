@@ -30,7 +30,7 @@ type ListManager interface {
 
 // MailDispatcher is the private API's view of the mail service.
 type MailDispatcher interface {
-	SendToList(ctx context.Context, listName string, raw string, data map[string]any) error
+	SendToList(ctx context.Context, listName string, raw string, topicNames []string, data map[string]any) error
 	SendTestMail(ctx context.Context, recipient domain.User, raw string, data map[string]any) error
 }
 
@@ -43,7 +43,7 @@ type NewsletterArchive interface {
 
 // ScheduleManager is the private API's view of the scheduling service.
 type ScheduleManager interface {
-	Schedule(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error)
+	Schedule(ctx context.Context, mailingListName, rawMarkdown string, scheduledAt int64, topicNames []string) (*domain.ScheduledMail, error)
 	List(ctx context.Context) ([]domain.ScheduledMail, error)
 	Get(ctx context.Context, id uint) (*domain.ScheduledMail, error)
 	Delete(ctx context.Context, id uint) error
@@ -53,19 +53,28 @@ type ScheduleManager interface {
 
 // PrivateHandler serves the private admin API.
 // When publicKey is non-nil, every request must carry a valid Ed25519 signature.
+type TopicManager interface {
+	Create(ctx context.Context, mailingListName, name, displayName string, defaultEnabled, subscribeExisting bool) (*domain.Topic, error)
+	List(ctx context.Context, mailingListName string) ([]domain.Topic, error)
+	Get(ctx context.Context, mailingListName, name string) (*domain.Topic, error)
+	Update(ctx context.Context, mailingListName, name string, displayName *string, defaultEnabled *bool) (*domain.Topic, error)
+	Delete(ctx context.Context, mailingListName, name string) error
+}
+
 type PrivateHandler struct {
 	lists       ListManager
 	mail        MailDispatcher
 	newsletters NewsletterArchive
 	scheduler   ScheduleManager
+	topics      TopicManager
 	publicKey   ed25519.PublicKey
 	logger      *slog.Logger
 }
 
 // NewPrivateHandler creates a new PrivateHandler.
 // Pass a nil publicKey to disable request authentication.
-func NewPrivateHandler(lists ListManager, mail MailDispatcher, newsletters NewsletterArchive, scheduler ScheduleManager, publicKey ed25519.PublicKey, logger *slog.Logger) *PrivateHandler {
-	return &PrivateHandler{lists: lists, mail: mail, newsletters: newsletters, scheduler: scheduler, publicKey: publicKey, logger: logger}
+func NewPrivateHandler(lists ListManager, mail MailDispatcher, newsletters NewsletterArchive, scheduler ScheduleManager, topics TopicManager, publicKey ed25519.PublicKey, logger *slog.Logger) *PrivateHandler {
+	return &PrivateHandler{lists: lists, mail: mail, newsletters: newsletters, scheduler: scheduler, topics: topics, publicKey: publicKey, logger: logger}
 }
 
 // Routes returns the mux for all private API endpoints.
@@ -79,6 +88,11 @@ func (h *PrivateHandler) Routes() *http.ServeMux {
 	mux.Handle("GET /lists/{name}/users", h.auth(h.handleListUsers))
 	mux.Handle("POST /lists/{name}/send", h.auth(h.handleSendToList))
 	mux.Handle("POST /lists/{name}/schedule", h.auth(h.handleScheduleMail))
+	mux.Handle("GET /lists/{name}/topics", h.auth(h.handleListTopics))
+	mux.Handle("POST /lists/{name}/topics", h.auth(h.handleCreateTopic))
+	mux.Handle("GET /lists/{name}/topics/{topic}", h.auth(h.handleGetTopic))
+	mux.Handle("PUT /lists/{name}/topics/{topic}", h.auth(h.handleUpdateTopic))
+	mux.Handle("DELETE /lists/{name}/topics/{topic}", h.auth(h.handleDeleteTopic))
 	mux.Handle("POST /mail/test", h.auth(h.handleSendTestMail))
 	mux.Handle("GET /newsletters", h.auth(h.handleAllNewsletters))
 	mux.Handle("GET /newsletters/{id}", h.auth(h.handleGetNewsletter))
@@ -113,8 +127,9 @@ type userResponse struct {
 }
 
 type sendRequest struct {
-	Raw  string         `json:"raw"`
-	Data map[string]any `json:"data"`
+	Raw    string         `json:"raw"`
+	Topics []string       `json:"topics"`
+	Data   map[string]any `json:"data"`
 }
 
 type testMailRequest struct {
@@ -145,15 +160,23 @@ type newsletterDetailResponse struct {
 }
 
 type scheduleRequest struct {
-	Raw         string `json:"raw"`
-	ScheduledAt int64  `json:"scheduledAt"`
+	Raw         string   `json:"raw"`
+	Topics      []string `json:"topics"`
+	ScheduledAt int64    `json:"scheduledAt"`
 }
 
 type scheduledMailResponse struct {
-	ID              uint   `json:"id"`
-	MailingListName string `json:"mailingListName"`
-	ScheduledAt     int64  `json:"scheduledAt"`
-	SentAt          *int64 `json:"sentAt"`
+	ID              uint     `json:"id"`
+	MailingListName string   `json:"mailingListName"`
+	ScheduledAt     int64    `json:"scheduledAt"`
+	SentAt          *int64   `json:"sentAt"`
+	TopicNames      []string `json:"topicNames,omitempty"`
+}
+
+type topicResponse struct {
+	Name           string `json:"name"`
+	DisplayName    string `json:"displayName"`
+	DefaultEnabled bool   `json:"defaultEnabled"`
 }
 
 type rescheduleRequest struct {
@@ -281,7 +304,7 @@ func (h *PrivateHandler) handleSendToList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.mail.SendToList(r.Context(), name, body.Raw, body.Data); err != nil {
+	if err := h.mail.SendToList(r.Context(), name, body.Raw, body.Topics, body.Data); err != nil {
 		h.logger.ErrorContext(r.Context(), "send to list failed", slog.String("list", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to send mail")
 		return
@@ -389,7 +412,7 @@ func (h *PrivateHandler) handleScheduleMail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	m, err := h.scheduler.Schedule(r.Context(), name, body.Raw, body.ScheduledAt)
+	m, err := h.scheduler.Schedule(r.Context(), name, body.Raw, body.ScheduledAt, body.Topics)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "schedule mail failed", slog.String("list", name), slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, "failed to schedule mail")
@@ -401,7 +424,90 @@ func (h *PrivateHandler) handleScheduleMail(w http.ResponseWriter, r *http.Reque
 		MailingListName: m.MailingListName,
 		ScheduledAt:     m.ScheduledAt,
 		SentAt:          m.SentAt,
+		TopicNames:      m.TopicNames,
 	})
+}
+
+func (h *PrivateHandler) handleListTopics(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	topics, err := h.topics.List(r.Context(), name)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "list topics failed", slog.String("list", name), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to load topics")
+		return
+	}
+	resp := make([]topicResponse, len(topics))
+	for i, t := range topics {
+		resp[i] = topicResponse{Name: t.Name, DisplayName: t.DisplayName, DefaultEnabled: t.DefaultEnabled}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PrivateHandler) handleCreateTopic(w http.ResponseWriter, r *http.Request) {
+	listName := r.PathValue("name")
+	var body struct {
+		Name              string `json:"name"`
+		DisplayName       string `json:"displayName"`
+		DefaultEnabled    bool   `json:"defaultEnabled"`
+		SubscribeExisting bool   `json:"subscribeExisting"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if body.DisplayName == "" {
+		body.DisplayName = body.Name
+	}
+	t, err := h.topics.Create(r.Context(), listName, body.Name, body.DisplayName, body.DefaultEnabled, body.SubscribeExisting)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "create topic failed", slog.String("list", listName), slog.String("topic", body.Name), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to create topic")
+		return
+	}
+	writeJSON(w, http.StatusCreated, topicResponse{Name: t.Name, DisplayName: t.DisplayName, DefaultEnabled: t.DefaultEnabled})
+}
+
+func (h *PrivateHandler) handleGetTopic(w http.ResponseWriter, r *http.Request) {
+	listName := r.PathValue("name")
+	topicName := r.PathValue("topic")
+	t, err := h.topics.Get(r.Context(), listName, topicName)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "get topic failed", slog.String("list", listName), slog.String("topic", topicName), slog.Any("error", err))
+		writeError(w, http.StatusNotFound, "topic not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, topicResponse{Name: t.Name, DisplayName: t.DisplayName, DefaultEnabled: t.DefaultEnabled})
+}
+
+func (h *PrivateHandler) handleUpdateTopic(w http.ResponseWriter, r *http.Request) {
+	listName := r.PathValue("name")
+	topicName := r.PathValue("topic")
+	var body struct {
+		DisplayName    *string `json:"displayName"`
+		DefaultEnabled *bool   `json:"defaultEnabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	t, err := h.topics.Update(r.Context(), listName, topicName, body.DisplayName, body.DefaultEnabled)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "update topic failed", slog.String("list", listName), slog.String("topic", topicName), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to update topic")
+		return
+	}
+	writeJSON(w, http.StatusOK, topicResponse{Name: t.Name, DisplayName: t.DisplayName, DefaultEnabled: t.DefaultEnabled})
+}
+
+func (h *PrivateHandler) handleDeleteTopic(w http.ResponseWriter, r *http.Request) {
+	listName := r.PathValue("name")
+	topicName := r.PathValue("topic")
+	if err := h.topics.Delete(r.Context(), listName, topicName); err != nil {
+		h.logger.ErrorContext(r.Context(), "delete topic failed", slog.String("list", listName), slog.String("topic", topicName), slog.Any("error", err))
+		writeError(w, http.StatusInternalServerError, "failed to delete topic")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *PrivateHandler) handleAllScheduled(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +524,7 @@ func (h *PrivateHandler) handleAllScheduled(w http.ResponseWriter, r *http.Reque
 			MailingListName: m.MailingListName,
 			ScheduledAt:     m.ScheduledAt,
 			SentAt:          m.SentAt,
+			TopicNames:      m.TopicNames,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -440,6 +547,7 @@ func (h *PrivateHandler) handleGetScheduled(w http.ResponseWriter, r *http.Reque
 		MailingListName: m.MailingListName,
 		ScheduledAt:     m.ScheduledAt,
 		SentAt:          m.SentAt,
+		TopicNames:      m.TopicNames,
 	})
 }
 
@@ -479,6 +587,7 @@ func (h *PrivateHandler) handleRescheduleMail(w http.ResponseWriter, r *http.Req
 		MailingListName: m.MailingListName,
 		ScheduledAt:     m.ScheduledAt,
 		SentAt:          m.SentAt,
+		TopicNames:      m.TopicNames,
 	})
 }
 
@@ -504,6 +613,7 @@ func (h *PrivateHandler) handleReplaceScheduledContent(w http.ResponseWriter, r 
 		MailingListName: m.MailingListName,
 		ScheduledAt:     m.ScheduledAt,
 		SentAt:          m.SentAt,
+		TopicNames:      m.TopicNames,
 	})
 }
 

@@ -2,12 +2,10 @@ package domain
 
 import "time"
 
-// MailingList represents a named list that users can subscribe to.
 type MailingList struct {
 	Name string
 }
 
-// User represents a subscriber on a mailing list.
 type User struct {
 	ID               uint
 	Name             string
@@ -17,7 +15,6 @@ type User struct {
 	UnsubscribeToken string
 }
 
-// IsConfirmed returns true if the user has completed double opt-in.
 func (u *User) IsConfirmed() bool {
 	return u.ConfirmedAt != nil
 }
@@ -27,20 +24,25 @@ type MailMetadata struct {
 	SenderName string
 }
 
-// Confirmation holds a pending double opt-in token for a user.
 type Confirmation struct {
 	ID     uint
 	UserID uint
 	Token  string
 }
 
-// UserCounts holds subscriber totals for a mailing list.
 type UserCounts struct {
 	Total     int
 	Confirmed int
 }
 
-// SentNewsletter is an archived record of a dispatched newsletter.
+type Topic struct {
+	ID              uint
+	Name            string
+	DisplayName     string
+	MailingListName string
+	DefaultEnabled  bool
+}
+
 type SentNewsletter struct {
 	ID           uint
 	Subject      string
@@ -49,14 +51,14 @@ type SentNewsletter struct {
 	SentAt       time.Time
 	Recipients   []User
 	MailingLists []MailingList
+	Topics       []Topic
 }
 
-// ScheduledMail is a pending newsletter queued for future delivery.
-// ScheduledAt and SentAt are unix timestamps (UTC).
 type ScheduledMail struct {
 	ID              uint
 	MailingListName string
 	RawMarkdown     string
 	ScheduledAt     int64
 	SentAt          *int64
+	TopicNames      []string
 }

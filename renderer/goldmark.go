@@ -70,6 +70,24 @@ func (r *GoldmarkRenderer) Render(raw *string, data map[string]any) (domain.Mail
 	return metadata, finalBuf.String(), nil
 }
 
+func (r *GoldmarkRenderer) RenderHTML(html string, data map[string]any) (string, error) {
+	templated, err := applyTemplate("html-content", html, data)
+	if err != nil {
+		return "", fmt.Errorf("templating html content: %w", err)
+	}
+
+	layoutData := mergeData(data, map[string]any{
+		"html":     templated,
+		"metadata": domain.MailMetadata{},
+	})
+
+	var buf bytes.Buffer
+	if err := r.tmpl.Execute(&buf, layoutData); err != nil {
+		return "", fmt.Errorf("executing layout template for html: %w", err)
+	}
+	return buf.String(), nil
+}
+
 func applyTemplate(name, text string, data map[string]any) (string, error) {
 	t, err := template.New(name).Parse(text)
 	if err != nil {

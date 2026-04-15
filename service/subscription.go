@@ -14,17 +14,18 @@ type SubscriptionService struct {
 	lists         domain.MailingListRepository
 	users         domain.UserRepository
 	confirmations domain.ConfirmationRepository
+	topics        domain.TopicRepository
 	renderer      domain.Renderer
 	sender        domain.Sender
-	confirmMail   string // raw markdown template for the confirmation mail
+	confirmMail   string
 	baseURL       string
 }
 
-// NewSubscriptionService creates a new SubscriptionService.
 func NewSubscriptionService(
 	lists domain.MailingListRepository,
 	users domain.UserRepository,
 	confirmations domain.ConfirmationRepository,
+	topics domain.TopicRepository,
 	renderer domain.Renderer,
 	sender domain.Sender,
 	confirmMail string,
@@ -34,6 +35,7 @@ func NewSubscriptionService(
 		lists:         lists,
 		users:         users,
 		confirmations: confirmations,
+		topics:        topics,
 		renderer:      renderer,
 		sender:        sender,
 		confirmMail:   confirmMail,
@@ -41,10 +43,7 @@ func NewSubscriptionService(
 	}
 }
 
-// Subscribe adds a user to the mailing list with the given name and sends a
-// confirmation mail to the user's address.
-// Returns an error if the mailing list does not exist.
-func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName, email string) (*domain.User, error) {
+func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName, email string, topicNames []string) (*domain.User, error) {
 	list, err := s.lists.GetListByName(ctx, listName)
 	if err != nil {
 		return nil, fmt.Errorf("mailing list %q not found: %w", listName, err)
@@ -60,6 +59,10 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 		return nil, fmt.Errorf("adding user to list %q: %w", listName, err)
 	}
 
+	if err := s.subscribeToTopics(ctx, user.ID, list.Name, topicNames); err != nil {
+		return nil, fmt.Errorf("subscribing user to topics: %w", err)
+	}
+
 	token, err := generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("generating confirmation token: %w", err)
@@ -70,9 +73,10 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 	}
 
 	metadata, body, err := s.renderer.Render(&s.confirmMail, map[string]any{
-		"token":      token,
-		"confirmURL": s.baseURL + "/confirm/" + token,
-		"Recipient":  *user,
+		"token":          token,
+		"confirmURL":     s.baseURL + "/confirm/" + token,
+		"preferencesURL": s.baseURL + "/preferences/" + listName + "/" + user.UnsubscribeToken,
+		"Recipient":      *user,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering confirmation mail: %w", err)
@@ -83,6 +87,42 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 	}
 
 	return user, nil
+}
+
+func (s *SubscriptionService) subscribeToTopics(ctx context.Context, userID uint, listName string, topicNames []string) error {
+	var topics []domain.Topic
+	var err error
+
+	if len(topicNames) > 0 {
+		allTopics, err := s.topics.GetTopicsByList(ctx, listName)
+		if err != nil {
+			return fmt.Errorf("getting topics for list %q: %w", listName, err)
+		}
+		nameSet := make(map[string]bool, len(topicNames))
+		for _, n := range topicNames {
+			nameSet[n] = true
+		}
+		for _, t := range allTopics {
+			if nameSet[t.Name] {
+				topics = append(topics, t)
+			}
+		}
+	} else {
+		topics, err = s.topics.GetDefaultEnabledTopics(ctx, listName)
+		if err != nil {
+			return fmt.Errorf("getting default topics for list %q: %w", listName, err)
+		}
+	}
+
+	if len(topics) == 0 {
+		return nil
+	}
+
+	topicIDs := make([]uint, len(topics))
+	for i, t := range topics {
+		topicIDs[i] = t.ID
+	}
+	return s.topics.SubscribeUserToTopics(ctx, userID, topicIDs)
 }
 
 // Confirm completes the double opt-in for the confirmation identified by token.

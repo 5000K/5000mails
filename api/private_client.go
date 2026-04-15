@@ -171,8 +171,8 @@ func (c *PrivateClient) GetUsers(ctx context.Context, listName string) ([]UserIt
 
 // SendToList dispatches a rendered markdown mail to all confirmed subscribers
 // of the named list.
-func (c *PrivateClient) SendToList(ctx context.Context, listName string, raw string, data map[string]any) error {
-	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/lists/%s/send", listName), map[string]any{"raw": raw, "data": data})
+func (c *PrivateClient) SendToList(ctx context.Context, listName string, raw string, topicNames []string, data map[string]any) error {
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/lists/%s/send", listName), map[string]any{"raw": raw, "topics": topicNames, "data": data})
 	if err != nil {
 		return fmt.Errorf("send to list: %w", err)
 	}
@@ -205,16 +205,17 @@ func (c *PrivateClient) SendTestMail(ctx context.Context, recipient RecipientInp
 
 // ScheduledMailItem describes a single scheduled mail as returned by the API.
 type ScheduledMailItem struct {
-	ID              uint   `json:"id"`
-	MailingListName string `json:"mailingListName"`
-	ScheduledAt     int64  `json:"scheduledAt"`
-	SentAt          *int64 `json:"sentAt"`
+	ID              uint     `json:"id"`
+	MailingListName string   `json:"mailingListName"`
+	ScheduledAt     int64    `json:"scheduledAt"`
+	SentAt          *int64   `json:"sentAt"`
+	TopicNames      []string `json:"topicNames,omitempty"`
 }
 
 // ScheduleMail creates a new scheduled mail for the given list.
 // scheduledAt is a unix timestamp (UTC).
-func (c *PrivateClient) ScheduleMail(ctx context.Context, listName string, raw string, scheduledAt int64) (*ScheduledMailItem, error) {
-	payload := map[string]any{"raw": raw, "scheduledAt": scheduledAt}
+func (c *PrivateClient) ScheduleMail(ctx context.Context, listName string, raw string, scheduledAt int64, topicNames []string) (*ScheduledMailItem, error) {
+	payload := map[string]any{"raw": raw, "scheduledAt": scheduledAt, "topics": topicNames}
 	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/lists/%s/schedule", listName), payload)
 	if err != nil {
 		return nil, fmt.Errorf("schedule mail: %w", err)
@@ -318,7 +319,101 @@ func (c *PrivateClient) ReplaceScheduledContent(ctx context.Context, id uint, ra
 	return &out, nil
 }
 
-// do builds and executes a signed HTTP request.
+type TopicItem struct {
+	Name           string `json:"name"`
+	DisplayName    string `json:"displayName"`
+	DefaultEnabled bool   `json:"defaultEnabled"`
+}
+
+func (c *PrivateClient) ListTopics(ctx context.Context, listName string) ([]TopicItem, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%s/topics", listName), nil)
+	if err != nil {
+		return nil, fmt.Errorf("list topics: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("list topics: %w", err)
+	}
+	var out []TopicItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("list topics: decode response: %w", err)
+	}
+	return out, nil
+}
+
+func (c *PrivateClient) CreateTopic(ctx context.Context, listName, name, displayName string, defaultEnabled, subscribeExisting bool) (*TopicItem, error) {
+	payload := map[string]any{
+		"name":              name,
+		"displayName":       displayName,
+		"defaultEnabled":    defaultEnabled,
+		"subscribeExisting": subscribeExisting,
+	}
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/lists/%s/topics", listName), payload)
+	if err != nil {
+		return nil, fmt.Errorf("create topic: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusCreated); err != nil {
+		return nil, fmt.Errorf("create topic: %w", err)
+	}
+	var out TopicItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("create topic: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *PrivateClient) GetTopic(ctx context.Context, listName, topicName string) (*TopicItem, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/lists/%s/topics/%s", listName, topicName), nil)
+	if err != nil {
+		return nil, fmt.Errorf("get topic: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("get topic: %w", err)
+	}
+	var out TopicItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("get topic: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *PrivateClient) UpdateTopic(ctx context.Context, listName, topicName string, displayName *string, defaultEnabled *bool) (*TopicItem, error) {
+	payload := map[string]any{}
+	if displayName != nil {
+		payload["displayName"] = *displayName
+	}
+	if defaultEnabled != nil {
+		payload["defaultEnabled"] = *defaultEnabled
+	}
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/lists/%s/topics/%s", listName, topicName), payload)
+	if err != nil {
+		return nil, fmt.Errorf("update topic: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("update topic: %w", err)
+	}
+	var out TopicItem
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("update topic: decode response: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *PrivateClient) DeleteTopic(ctx context.Context, listName, topicName string) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/lists/%s/topics/%s", listName, topicName), nil)
+	if err != nil {
+		return fmt.Errorf("delete topic: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusNoContent); err != nil {
+		return fmt.Errorf("delete topic: %w", err)
+	}
+	return nil
+}
+
 func (c *PrivateClient) do(ctx context.Context, method, path string, payload any) (*http.Response, error) {
 	var bodyBytes []byte
 	if payload != nil {

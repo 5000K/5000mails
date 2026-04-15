@@ -8,7 +8,7 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-func (r *MailingListRepository) CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*domain.SentNewsletter, error) {
+func (r *MailingListRepository) CreateSentNewsletter(ctx context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string, topicNames []string) (*domain.SentNewsletter, error) {
 	recipients := make([]User, len(recipientIDs))
 	for i, id := range recipientIDs {
 		recipients[i] = User{}
@@ -20,12 +20,21 @@ func (r *MailingListRepository) CreateSentNewsletter(ctx context.Context, subjec
 		mailingLists[i] = MailingList{Name: name}
 	}
 
+	var topics []Topic
+	if len(topicNames) > 0 {
+		result := r.db.WithContext(ctx).Where("name IN ?", topicNames).Find(&topics)
+		if result.Error != nil {
+			return nil, fmt.Errorf("looking up topics for sent newsletter: %w", result.Error)
+		}
+	}
+
 	record := &SentNewsletter{
 		Subject:      subject,
 		SenderName:   senderName,
 		RawMarkdown:  rawMarkdown,
 		Recipients:   recipients,
 		MailingLists: mailingLists,
+		Topics:       topics,
 	}
 
 	result := r.db.WithContext(ctx).Create(record)
@@ -37,7 +46,7 @@ func (r *MailingListRepository) CreateSentNewsletter(ctx context.Context, subjec
 		return nil, fmt.Errorf("create sent newsletter: %w", result.Error)
 	}
 
-	if err := r.db.WithContext(ctx).Preload("Recipients").Preload("MailingLists").First(record, record.ID).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Recipients").Preload("MailingLists").Preload("Topics").First(record, record.ID).Error; err != nil {
 		return nil, fmt.Errorf("loading sent newsletter associations: %w", err)
 	}
 
@@ -46,7 +55,7 @@ func (r *MailingListRepository) CreateSentNewsletter(ctx context.Context, subjec
 
 func (r *MailingListRepository) GetAllSentNewsletters(ctx context.Context) ([]domain.SentNewsletter, error) {
 	var records []SentNewsletter
-	result := r.db.WithContext(ctx).Preload("MailingLists").Find(&records)
+	result := r.db.WithContext(ctx).Preload("MailingLists").Preload("Topics").Find(&records)
 	if result.Error != nil {
 		r.logger.ErrorContext(ctx, "failed to get sent newsletters", slog.Any("error", result.Error))
 		return nil, fmt.Errorf("get all sent newsletters: %w", result.Error)
@@ -56,7 +65,7 @@ func (r *MailingListRepository) GetAllSentNewsletters(ctx context.Context) ([]do
 
 func (r *MailingListRepository) GetSentNewsletterByID(ctx context.Context, id uint, withRecipients bool) (*domain.SentNewsletter, error) {
 	var record SentNewsletter
-	q := r.db.WithContext(ctx).Preload("MailingLists")
+	q := r.db.WithContext(ctx).Preload("MailingLists").Preload("Topics")
 	if withRecipients {
 		q = q.Preload("Recipients")
 	}
@@ -74,7 +83,7 @@ func (r *MailingListRepository) GetSentNewsletterByID(ctx context.Context, id ui
 func (r *MailingListRepository) DeleteSentNewsletter(ctx context.Context, id uint) error {
 	record := &SentNewsletter{}
 	record.ID = id
-	if err := r.db.WithContext(ctx).Select("Recipients", "MailingLists").Delete(record).Error; err != nil {
+	if err := r.db.WithContext(ctx).Select("Recipients", "MailingLists", "Topics").Delete(record).Error; err != nil {
 		r.logger.ErrorContext(ctx, "failed to delete sent newsletter",
 			slog.Uint64("id", uint64(id)),
 			slog.Any("error", err),

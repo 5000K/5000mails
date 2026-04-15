@@ -8,7 +8,6 @@ import (
 	"github.com/5000K/5000mails/domain"
 )
 
-// fakeListRepo is an in-memory MailingListRepository.
 type fakeListRepo struct {
 	lists map[string]*domain.MailingList
 
@@ -83,7 +82,6 @@ func (r *fakeListRepo) DeleteList(_ context.Context, name string) error {
 	return nil
 }
 
-// fakeUserRepo is an in-memory UserRepository.
 type fakeUserRepo struct {
 	users  map[uint]*domain.User
 	nextID uint
@@ -179,7 +177,6 @@ func (r *fakeUserRepo) RemoveUser(_ context.Context, userID uint) error {
 	return nil
 }
 
-// fakeConfirmationRepo is an in-memory ConfirmationRepository.
 type fakeConfirmationRepo struct {
 	confirmations map[uint]*domain.Confirmation
 	nextID        uint
@@ -233,7 +230,187 @@ func (r *fakeConfirmationRepo) DeleteConfirmation(_ context.Context, id uint) er
 	return nil
 }
 
-// fakeNewsletterRepo is an in-memory SentNewsletterRepository.
+type fakeTopicRepo struct {
+	topics     map[uint]*domain.Topic
+	userTopics map[uint]map[uint]bool
+	nextID     uint
+
+	createErr            error
+	getByListErr         error
+	getByNameErr         error
+	updateErr            error
+	deleteErr            error
+	getDefaultErr        error
+	subscribeUserErr     error
+	unsubscribeUserErr   error
+	setUserTopicsErr     error
+	getUserTopicsErr     error
+	getConfirmedUsersErr error
+	subscribeAllErr      error
+}
+
+func newFakeTopicRepo(seed ...*domain.Topic) *fakeTopicRepo {
+	r := &fakeTopicRepo{
+		topics:     make(map[uint]*domain.Topic),
+		userTopics: make(map[uint]map[uint]bool),
+		nextID:     1,
+	}
+	for _, t := range seed {
+		if t.ID == 0 {
+			t.ID = r.nextID
+			r.nextID++
+		}
+		r.topics[t.ID] = t
+		if t.ID >= r.nextID {
+			r.nextID = t.ID + 1
+		}
+	}
+	return r
+}
+
+func (r *fakeTopicRepo) CreateTopic(_ context.Context, mailingListName, name, displayName string, defaultEnabled bool) (*domain.Topic, error) {
+	if r.createErr != nil {
+		return nil, r.createErr
+	}
+	t := &domain.Topic{ID: r.nextID, Name: name, DisplayName: displayName, MailingListName: mailingListName, DefaultEnabled: defaultEnabled}
+	r.nextID++
+	r.topics[t.ID] = t
+	return t, nil
+}
+
+func (r *fakeTopicRepo) GetTopicsByList(_ context.Context, mailingListName string) ([]domain.Topic, error) {
+	if r.getByListErr != nil {
+		return nil, r.getByListErr
+	}
+	var out []domain.Topic
+	for _, t := range r.topics {
+		if t.MailingListName == mailingListName {
+			out = append(out, *t)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeTopicRepo) GetTopicByName(_ context.Context, mailingListName, name string) (*domain.Topic, error) {
+	if r.getByNameErr != nil {
+		return nil, r.getByNameErr
+	}
+	for _, t := range r.topics {
+		if t.MailingListName == mailingListName && t.Name == name {
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("topic %q on list %q not found", name, mailingListName)
+}
+
+func (r *fakeTopicRepo) UpdateTopic(_ context.Context, mailingListName, name string, displayName *string, defaultEnabled *bool) (*domain.Topic, error) {
+	if r.updateErr != nil {
+		return nil, r.updateErr
+	}
+	for _, t := range r.topics {
+		if t.MailingListName == mailingListName && t.Name == name {
+			if displayName != nil {
+				t.DisplayName = *displayName
+			}
+			if defaultEnabled != nil {
+				t.DefaultEnabled = *defaultEnabled
+			}
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("topic %q on list %q not found", name, mailingListName)
+}
+
+func (r *fakeTopicRepo) DeleteTopic(_ context.Context, mailingListName, name string) error {
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	for id, t := range r.topics {
+		if t.MailingListName == mailingListName && t.Name == name {
+			delete(r.topics, id)
+			return nil
+		}
+	}
+	return fmt.Errorf("topic %q on list %q not found", name, mailingListName)
+}
+
+func (r *fakeTopicRepo) GetDefaultEnabledTopics(_ context.Context, mailingListName string) ([]domain.Topic, error) {
+	if r.getDefaultErr != nil {
+		return nil, r.getDefaultErr
+	}
+	var out []domain.Topic
+	for _, t := range r.topics {
+		if t.MailingListName == mailingListName && t.DefaultEnabled {
+			out = append(out, *t)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeTopicRepo) SubscribeUserToTopics(_ context.Context, userID uint, topicIDs []uint) error {
+	if r.subscribeUserErr != nil {
+		return r.subscribeUserErr
+	}
+	if r.userTopics[userID] == nil {
+		r.userTopics[userID] = make(map[uint]bool)
+	}
+	for _, id := range topicIDs {
+		r.userTopics[userID][id] = true
+	}
+	return nil
+}
+
+func (r *fakeTopicRepo) UnsubscribeUserFromTopics(_ context.Context, userID uint, topicIDs []uint) error {
+	if r.unsubscribeUserErr != nil {
+		return r.unsubscribeUserErr
+	}
+	if r.userTopics[userID] == nil {
+		return nil
+	}
+	for _, id := range topicIDs {
+		delete(r.userTopics[userID], id)
+	}
+	return nil
+}
+
+func (r *fakeTopicRepo) SetUserTopics(_ context.Context, userID uint, topicIDs []uint) error {
+	if r.setUserTopicsErr != nil {
+		return r.setUserTopicsErr
+	}
+	r.userTopics[userID] = make(map[uint]bool)
+	for _, id := range topicIDs {
+		r.userTopics[userID][id] = true
+	}
+	return nil
+}
+
+func (r *fakeTopicRepo) GetUserTopics(_ context.Context, userID uint) ([]domain.Topic, error) {
+	if r.getUserTopicsErr != nil {
+		return nil, r.getUserTopicsErr
+	}
+	var out []domain.Topic
+	for id := range r.userTopics[userID] {
+		if t, ok := r.topics[id]; ok {
+			out = append(out, *t)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeTopicRepo) GetConfirmedUsersSubscribedToTopics(_ context.Context, _ string, _ []string) ([]domain.User, error) {
+	if r.getConfirmedUsersErr != nil {
+		return nil, r.getConfirmedUsersErr
+	}
+	return nil, nil
+}
+
+func (r *fakeTopicRepo) SubscribeAllUsersToTopic(_ context.Context, _ string, _ uint) error {
+	if r.subscribeAllErr != nil {
+		return r.subscribeAllErr
+	}
+	return nil
+}
+
 type fakeNewsletterRepo struct {
 	newsletters map[uint]*domain.SentNewsletter
 	nextID      uint
@@ -255,7 +432,7 @@ func newFakeNewsletterRepo(seed ...*domain.SentNewsletter) *fakeNewsletterRepo {
 	return r
 }
 
-func (r *fakeNewsletterRepo) CreateSentNewsletter(_ context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string) (*domain.SentNewsletter, error) {
+func (r *fakeNewsletterRepo) CreateSentNewsletter(_ context.Context, subject, senderName, rawMarkdown string, recipientIDs []uint, listNames []string, topicNames []string) (*domain.SentNewsletter, error) {
 	if r.createErr != nil {
 		return nil, r.createErr
 	}
@@ -267,6 +444,10 @@ func (r *fakeNewsletterRepo) CreateSentNewsletter(_ context.Context, subject, se
 	for i, name := range listNames {
 		lists[i] = domain.MailingList{Name: name}
 	}
+	topics := make([]domain.Topic, len(topicNames))
+	for i, name := range topicNames {
+		topics[i] = domain.Topic{Name: name}
+	}
 	n := &domain.SentNewsletter{
 		ID:           r.nextID,
 		Subject:      subject,
@@ -275,6 +456,7 @@ func (r *fakeNewsletterRepo) CreateSentNewsletter(_ context.Context, subject, se
 		SentAt:       time.Now(),
 		Recipients:   recipients,
 		MailingLists: lists,
+		Topics:       topics,
 	}
 	r.nextID++
 	r.newsletters[n.ID] = n
@@ -314,7 +496,6 @@ func (r *fakeNewsletterRepo) DeleteSentNewsletter(_ context.Context, id uint) er
 	return nil
 }
 
-// fakeSender records SendMail calls.
 type fakeSender struct {
 	calls []sendCall
 	err   error
@@ -334,15 +515,28 @@ func (s *fakeSender) SendMail(_ context.Context, metadata domain.MailMetadata, b
 	return nil
 }
 
-// fakeRenderer returns configurable metadata / body.
 type fakeRenderer struct {
 	metadata domain.MailMetadata
 	body     string
 	err      error
 	lastData map[string]any
+
+	htmlBody string
+	htmlErr  error
 }
 
 func (r *fakeRenderer) Render(_ *string, data map[string]any) (domain.MailMetadata, string, error) {
 	r.lastData = data
 	return r.metadata, r.body, r.err
+}
+
+func (r *fakeRenderer) RenderHTML(_ string, data map[string]any) (string, error) {
+	r.lastData = data
+	if r.htmlErr != nil {
+		return "", r.htmlErr
+	}
+	if r.htmlBody != "" {
+		return r.htmlBody, nil
+	}
+	return r.body, nil
 }

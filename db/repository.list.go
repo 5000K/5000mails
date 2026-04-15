@@ -34,6 +34,20 @@ func (r *MailingListRepository) CreateList(ctx context.Context, name string) (*d
 		return nil, fmt.Errorf("create mailing list: %w", result.Error)
 	}
 
+	defaultTopic := &Topic{
+		Name:            "default",
+		DisplayName:     "Default",
+		MailingListName: name,
+		DefaultEnabled:  true,
+	}
+	if err := r.db.WithContext(ctx).Create(defaultTopic).Error; err != nil {
+		r.logger.ErrorContext(ctx, "failed to create default topic for list",
+			slog.String("name", name),
+			slog.Any("error", err),
+		)
+		return nil, fmt.Errorf("create default topic for list %q: %w", name, err)
+	}
+
 	r.logger.InfoContext(ctx, "created mailing list", slog.String("name", name))
 	return ToDomainList(list), nil
 }

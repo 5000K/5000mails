@@ -135,7 +135,7 @@ type fakeMailDispatcher struct {
 	lastRecipient domain.User
 }
 
-func (f *fakeMailDispatcher) SendToList(_ context.Context, listName, raw string, _ map[string]any) error {
+func (f *fakeMailDispatcher) SendToList(_ context.Context, listName, raw string, _ []string, _ map[string]any) error {
 	f.lastListName = listName
 	f.lastRaw = raw
 	return f.sendToListErr
@@ -204,7 +204,7 @@ func (f *fakeNewsletterArchive) DeleteNewsletter(_ context.Context, id uint) err
 
 type fakeScheduleManager struct{}
 
-func (f *fakeScheduleManager) Schedule(_ context.Context, mailingListName, rawMarkdown string, scheduledAt int64) (*domain.ScheduledMail, error) {
+func (f *fakeScheduleManager) Schedule(_ context.Context, mailingListName, rawMarkdown string, scheduledAt int64, _ []string) (*domain.ScheduledMail, error) {
 	return &domain.ScheduledMail{ID: 1, MailingListName: mailingListName, RawMarkdown: rawMarkdown, ScheduledAt: scheduledAt}, nil
 }
 func (f *fakeScheduleManager) List(_ context.Context) ([]domain.ScheduledMail, error) {
@@ -222,7 +222,7 @@ func (f *fakeScheduleManager) ReplaceContent(_ context.Context, id uint, rawMark
 }
 
 func newPrivateTestHandler(lists *fakeListManager, mail *fakeMailDispatcher, pub ed25519.PublicKey) *PrivateHandler {
-	return NewPrivateHandler(lists, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, pub, slog.Default())
+	return NewPrivateHandler(lists, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, pub, slog.Default())
 }
 
 func privateRequest(t *testing.T, h *PrivateHandler, method, target string, body any) *httptest.ResponseRecorder {
@@ -579,7 +579,7 @@ func TestPrivateHandler_AllNewsletters(t *testing.T) {
 
 	t.Run("returns all newsletters", func(t *testing.T) {
 		nl := newFakeNewsletterArchive(n)
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, nil, slog.Default())
 		w := privateRequest(t, h, http.MethodGet, "/newsletters", nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
@@ -600,7 +600,7 @@ func TestPrivateHandler_AllNewsletters(t *testing.T) {
 	t.Run("returns 500 on service error", func(t *testing.T) {
 		nl := newFakeNewsletterArchive()
 		nl.getAllErr = errors.New("db failure")
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, nil, slog.Default())
 		w := privateRequest(t, h, http.MethodGet, "/newsletters", nil)
 		if w.Code != http.StatusInternalServerError {
 			t.Errorf("expected 500, got %d", w.Code)
@@ -623,7 +623,7 @@ func TestPrivateHandler_GetNewsletter(t *testing.T) {
 
 	t.Run("returns newsletter detail", func(t *testing.T) {
 		nl := newFakeNewsletterArchive(n)
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/newsletters/42", nil)
 		req.SetPathValue("id", "42")
 		w := httptest.NewRecorder()
@@ -649,7 +649,7 @@ func TestPrivateHandler_GetNewsletter(t *testing.T) {
 	})
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/newsletters/99", nil)
 		req.SetPathValue("id", "99")
 		w := httptest.NewRecorder()
@@ -660,7 +660,7 @@ func TestPrivateHandler_GetNewsletter(t *testing.T) {
 	})
 
 	t.Run("returns 400 on invalid id", func(t *testing.T) {
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/newsletters/abc", nil)
 		req.SetPathValue("id", "abc")
 		w := httptest.NewRecorder()
@@ -677,7 +677,7 @@ func TestPrivateHandler_DeleteNewsletter(t *testing.T) {
 
 	t.Run("returns 204 on success", func(t *testing.T) {
 		nl := newFakeNewsletterArchive(n)
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodDelete, "/newsletters/7", nil)
 		req.SetPathValue("id", "7")
 		w := httptest.NewRecorder()
@@ -693,7 +693,7 @@ func TestPrivateHandler_DeleteNewsletter(t *testing.T) {
 	t.Run("returns 500 on service error", func(t *testing.T) {
 		nl := newFakeNewsletterArchive(n)
 		nl.deleteErr = errors.New("db down")
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, nl, &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodDelete, "/newsletters/7", nil)
 		req.SetPathValue("id", "7")
 		w := httptest.NewRecorder()
@@ -704,7 +704,7 @@ func TestPrivateHandler_DeleteNewsletter(t *testing.T) {
 	})
 
 	t.Run("returns 400 on invalid id", func(t *testing.T) {
-		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, slog.Default())
+		h := NewPrivateHandler(newFakeListManager(), &fakeMailDispatcher{}, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, nil, slog.Default())
 		req := httptest.NewRequest(http.MethodDelete, "/newsletters/bad", nil)
 		req.SetPathValue("id", "bad")
 		w := httptest.NewRecorder()
@@ -772,7 +772,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	}
 	mail := &fakeMailDispatcher{}
 
-	srv := httptest.NewServer(NewPrivateHandler(m, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, pub, slog.Default()).Routes())
+	srv := httptest.NewServer(NewPrivateHandler(m, mail, newFakeNewsletterArchive(), &fakeScheduleManager{}, nil, pub, slog.Default()).Routes())
 	defer srv.Close()
 
 	client := NewPrivateClient(srv.URL, priv)
@@ -812,7 +812,7 @@ func TestPrivateClient_Integration(t *testing.T) {
 	})
 
 	t.Run("SendToList", func(t *testing.T) {
-		if err := client.SendToList(ctx, "weekly", "# Hello", nil); err != nil {
+		if err := client.SendToList(ctx, "weekly", "# Hello", nil, nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if mail.lastListName != "weekly" {

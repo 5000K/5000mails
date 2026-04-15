@@ -8,8 +8,9 @@ import (
 )
 
 type MailingList struct {
-	Name  string `gorm:"primaryKey"`
-	Users []User `gorm:"foreignKey:MailingListName"`
+	Name   string  `gorm:"primaryKey"`
+	Users  []User  `gorm:"foreignKey:MailingListName"`
+	Topics []Topic `gorm:"foreignKey:MailingListName"`
 }
 
 type User struct {
@@ -17,8 +18,9 @@ type User struct {
 	Name             string `gorm:"not null"`
 	Email            string `gorm:"not null;uniqueIndex:idx_user_email_list"`
 	ConfirmedAt      *time.Time
-	MailingListName  string `gorm:"not null;uniqueIndex:idx_user_email_list"`
-	UnsubscribeToken string `gorm:"not null;uniqueIndex"`
+	MailingListName  string  `gorm:"not null;uniqueIndex:idx_user_email_list"`
+	UnsubscribeToken string  `gorm:"not null;uniqueIndex"`
+	Topics           []Topic `gorm:"many2many:user_topic_subscriptions;"`
 }
 
 func ToGORMUser(u *domain.User) *User {
@@ -56,6 +58,32 @@ func ToDomainList(l *MailingList) *domain.MailingList {
 	}
 }
 
+type Topic struct {
+	gorm.Model
+	Name            string `gorm:"not null;uniqueIndex:idx_topic_list_name"`
+	DisplayName     string `gorm:"not null"`
+	MailingListName string `gorm:"not null;uniqueIndex:idx_topic_list_name"`
+	DefaultEnabled  bool   `gorm:"not null;default:false"`
+}
+
+func ToDomainTopic(t *Topic) *domain.Topic {
+	return &domain.Topic{
+		ID:              t.ID,
+		Name:            t.Name,
+		DisplayName:     t.DisplayName,
+		MailingListName: t.MailingListName,
+		DefaultEnabled:  t.DefaultEnabled,
+	}
+}
+
+func ToDomainTopics(topics []Topic) []domain.Topic {
+	result := make([]domain.Topic, len(topics))
+	for i, t := range topics {
+		result[i] = *ToDomainTopic(&t)
+	}
+	return result
+}
+
 type Confirmation struct {
 	gorm.Model
 	UserID uint   `gorm:"not null;index"`
@@ -84,6 +112,7 @@ type SentNewsletter struct {
 	RawMarkdown  string
 	Recipients   []User        `gorm:"many2many:sent_newsletter_recipients;"`
 	MailingLists []MailingList `gorm:"many2many:sent_newsletter_mailing_lists;"`
+	Topics       []Topic       `gorm:"many2many:sent_newsletter_topics;"`
 }
 
 func ToDomainSentNewsletter(n *SentNewsletter) *domain.SentNewsletter {
@@ -99,6 +128,7 @@ func ToDomainSentNewsletter(n *SentNewsletter) *domain.SentNewsletter {
 		SentAt:       n.CreatedAt,
 		Recipients:   ToDomainUsers(n.Recipients),
 		MailingLists: lists,
+		Topics:       ToDomainTopics(n.Topics),
 	}
 }
 
@@ -110,21 +140,32 @@ func ToDomainSentNewsletters(newsletters []SentNewsletter) []domain.SentNewslett
 	return result
 }
 
+type ScheduledMailTopic struct {
+	ScheduledMailID uint   `gorm:"primaryKey"`
+	TopicName       string `gorm:"primaryKey"`
+}
+
 type ScheduledMail struct {
 	gorm.Model
 	MailingListName string `gorm:"not null;index"`
 	RawMarkdown     string `gorm:"not null"`
 	ScheduledAt     int64  `gorm:"not null;index"`
 	SentAt          *int64
+	Topics          []ScheduledMailTopic `gorm:"foreignKey:ScheduledMailID"`
 }
 
 func ToDomainScheduledMail(m *ScheduledMail) *domain.ScheduledMail {
+	topicNames := make([]string, len(m.Topics))
+	for i, t := range m.Topics {
+		topicNames[i] = t.TopicName
+	}
 	return &domain.ScheduledMail{
 		ID:              m.ID,
 		MailingListName: m.MailingListName,
 		RawMarkdown:     m.RawMarkdown,
 		ScheduledAt:     m.ScheduledAt,
 		SentAt:          m.SentAt,
+		TopicNames:      topicNames,
 	}
 }
 
