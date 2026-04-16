@@ -32,6 +32,38 @@ The table shows which variables are automatically injected in each sending conte
 
 ---
 
+## Message page variables
+
+Message pages are the HTML responses shown to users after subscription actions (subscribe, confirm, unsubscribe) or on error conditions. Each page is a markdown string configured under `strings:` in `config.yml` and rendered through the same pipeline as newsletter content (markdown → Goldmark → `template.html`).
+
+The `isMessage` flag is always `true` in this context, letting the HTML layout template visually distinguish message pages from newsletter issues (e.g. to hide a newsletter header or apply a simpler layout).
+
+| Variable     | Type     | Available on                                                                     | Description                                                                                    |
+| ------------ | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `isMessage`  | `bool`   | all message pages                                                                | Always `true`; use in `template.html` to detect message pages vs newsletter renders           |
+| `listName`   | `string` | `subscribe-success`, `subscribe-error-invalid-input`, `subscribe-error-already-subscribed`, `subscribe-error` | The mailing list name from the URL (`/:listName/subscribe`) |
+| `email`      | `string` | `subscribe-error-already-subscribed`                                             | The email address that is already confirmed                                                    |
+
+All message strings support frontmatter (`subject`, `sender`, and custom fields) exactly like newsletter bodies and confirm-mail templates.
+
+### Configured string keys
+
+| Config key                          | Trigger                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| `subscribe-success`                 | Subscription request accepted (confirmation email sent)                        |
+| `subscribe-error-invalid-input`     | Name or email missing from the subscribe form                                  |
+| `subscribe-error-already-subscribed`| The submitted email is already confirmed on the list                           |
+| `subscribe-error`                   | Internal server error during subscription                                      |
+| `confirm-success`                   | Double opt-in token validated successfully                                      |
+| `confirm-error-invalid-token`       | Confirmation token not found or already used                                   |
+| `unsubscribe-success`               | User removed from the list                                                     |
+| `unsubscribe-error-invalid-token`   | Unsubscribe token not found                                                    |
+| `newsletter-not-found`              | Requested newsletter issue does not exist                                      |
+| `preferences-error-invalid-token`   | Preferences link token not found                                               |
+| `preferences-error`                 | Internal error loading or saving topic preferences                             |
+
+---
+
 ## HTML layout template variables
 
 In addition to all variables above (and any custom `data`), the following keys are injected exclusively when the HTML layout template (`template.html`) is executed:

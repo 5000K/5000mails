@@ -22,10 +22,101 @@ paths:
   template: "./static/template.html"   # HTML wrapper rendered around markdown content
   confirm-mail: "./static/confirm.md"  # markdown template for the double opt-in email
 
-redirects:
-  subscribe-success: ""   # https://yoursite.com/subscribed
-  subscribe-error: ""     # https://yoursite.com/subscribe-failed
-  confirm-success: ""     # https://yoursite.com/confirmed
-  confirm-error: ""       # https://yoursite.com/confirm-failed
-  unsubscribe-success: "" # https://yoursite.com/unsubscribed
-  unsubscribe-error: ""   # https://yoursite.com/unsubscribe-failed
+strings:
+  subscribe-success: |
+    ---
+    subject: "Subscription received"
+    ---
+    # Check your inbox
+
+    Thanks for signing up to **{{.listName}}**!
+    We've sent you a confirmation email — click the link inside to complete your subscription.
+
+  subscribe-error-invalid-input: |
+    ---
+    subject: "Invalid subscription request"
+    ---
+    # Something's missing
+
+    Please make sure you fill in both your **name** and **email address** before submitting.
+
+  subscribe-error-already-subscribed: |
+    ---
+    subject: "Already subscribed"
+    ---
+    # You're already subscribed
+
+    **{{.email}}** is already confirmed on **{{.listName}}**.
+    No action needed — you're all set!
+
+  subscribe-error: |
+    ---
+    subject: "Subscription failed"
+    ---
+    # Something went wrong
+
+    We couldn't process your subscription to **{{.listName}}** right now.
+    Please try again in a few minutes.
+
+  confirm-success: |
+    ---
+    subject: "Subscription confirmed"
+    ---
+    # You're confirmed!
+
+    Your subscription has been confirmed. Welcome aboard!
+    You'll start receiving emails as soon as the next issue is sent.
+
+  confirm-error-invalid-token: |
+    ---
+    subject: "Confirmation link invalid"
+    ---
+    # Link expired or invalid
+
+    This confirmation link is no longer valid. It may have already been used or has expired.
+    Try subscribing again to receive a fresh confirmation email.
+
+  unsubscribe-success: |
+    ---
+    subject: "Unsubscribed"
+    ---
+    # You've been unsubscribed
+
+    You have been successfully removed from the mailing list.
+    We're sorry to see you go!
+
+  unsubscribe-error-invalid-token: |
+    ---
+    subject: "Unsubscribe link invalid"
+    ---
+    # Link expired or invalid
+
+    This unsubscribe link is no longer valid.
+    If you'd like to unsubscribe, please use the link in one of your recent emails.
+
+  newsletter-not-found: |
+    ---
+    subject: "Issue not found"
+    ---
+    # Issue not found
+
+    This newsletter issue could not be found.
+    It may have been removed or the link may be incorrect.
+
+  preferences-error-invalid-token: |
+    ---
+    subject: "Preferences link invalid"
+    ---
+    # Link expired or invalid
+
+    This preferences link is no longer valid.
+    Please use the link in one of your recent emails to manage your subscription.
+
+  preferences-error: |
+    ---
+    subject: "Preferences unavailable"
+    ---
+    # Something went wrong
+
+    We couldn't load your preferences right now.
+    Please try again in a few minutes.

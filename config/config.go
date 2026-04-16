@@ -28,13 +28,18 @@ type SmtpConfig struct {
 	TLSPolicy   TLSPolicy `env:"SMTP_TLS_POLICY" env-default:"TLSOpportunistic" yaml:"tls-policy"`
 }
 
-type RedirectPages struct {
-	SubscribeSuccess   string `env:"REDIRECT_SUBSCRIBE_SUCCESS" yaml:"subscribe-success"`
-	SubscribeError     string `env:"REDIRECT_SUBSCRIBE_ERROR" yaml:"subscribe-error"`
-	ConfirmSuccess     string `env:"REDIRECT_CONFIRM_SUCCESS" yaml:"confirm-success"`
-	ConfirmError       string `env:"REDIRECT_CONFIRM_ERROR" yaml:"confirm-error"`
-	UnsubscribeSuccess string `env:"REDIRECT_UNSUBSCRIBE_SUCCESS" yaml:"unsubscribe-success"`
-	UnsubscribeError   string `env:"REDIRECT_UNSUBSCRIBE_ERROR" yaml:"unsubscribe-error"`
+type MessageStrings struct {
+	SubscribeSuccess                string `yaml:"subscribe-success"`
+	SubscribeErrorInvalidInput      string `yaml:"subscribe-error-invalid-input"`
+	SubscribeErrorAlreadySubscribed string `yaml:"subscribe-error-already-subscribed"`
+	SubscribeError                  string `yaml:"subscribe-error"`
+	ConfirmSuccess                  string `yaml:"confirm-success"`
+	ConfirmErrorInvalidToken        string `yaml:"confirm-error-invalid-token"`
+	UnsubscribeSuccess              string `yaml:"unsubscribe-success"`
+	UnsubscribeErrorInvalidToken    string `yaml:"unsubscribe-error-invalid-token"`
+	NewsletterNotFound              string `yaml:"newsletter-not-found"`
+	PreferencesErrorInvalidToken    string `yaml:"preferences-error-invalid-token"`
+	PreferencesError                string `yaml:"preferences-error"`
 }
 
 type Config struct {
@@ -53,7 +58,7 @@ type Config struct {
 		PublicKeyPath string `env:"AUTH_PUBLIC_KEY_PATH" yaml:"public-key-path"`
 	} `yaml:"auth"`
 
-	Redirects RedirectPages `yaml:"redirects"`
+	Strings MessageStrings `yaml:"strings"`
 
 	Paths struct {
 		Config      string `env:"CONFIG_PATH" env-default:"config.yml"`
