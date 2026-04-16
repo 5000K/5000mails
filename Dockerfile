@@ -5,9 +5,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -o /5000mails .
+RUN CGO_ENABLED=1 go build -o /5000mails .
 
-FROM alpine:latest
+FROM debian:bookworm-slim
+
 
 COPY --from=builder /5000mails /5000mails
 
