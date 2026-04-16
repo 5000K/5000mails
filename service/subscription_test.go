@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/5000K/5000mails/domain"
 )
@@ -75,6 +76,99 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 		wantURL := "https://example.com/confirm/" + token
 		if got, _ := renderer.lastData["confirmURL"].(string); got != wantURL {
 			t.Errorf("confirmURL = %q, want %q", got, wantURL)
+		}
+	})
+
+	t.Run("resends confirmation when user exists but is unconfirmed", func(t *testing.T) {
+		existing := &domain.User{ID: 1, Name: "Alice", Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "unsub-tok"}
+		users := newFakeUserRepo(existing)
+		confs := newFakeConfirmationRepo(&domain.Confirmation{ID: 1, UserID: 1, Token: "old-tok"})
+		sender := &fakeSender{}
+		metadata := domain.MailMetadata{Subject: "Confirm"}
+		svc := newSubscriptionSvc(newFakeListRepo(list), users, confs, newFakeTopicRepo(), &fakeRenderer{metadata: metadata, body: "click"}, sender)
+
+		user, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if user.ID != existing.ID {
+			t.Errorf("expected existing user, got ID=%d", user.ID)
+		}
+		if len(confs.confirmations) != 1 {
+			t.Errorf("expected 1 confirmation (old replaced), got %d", len(confs.confirmations))
+		}
+		if len(sender.calls) != 1 {
+			t.Errorf("expected 1 send call, got %d", len(sender.calls))
+		}
+	})
+
+	t.Run("returns ErrUserAlreadyConfirmed when user is already confirmed", func(t *testing.T) {
+		now := time.Now()
+		existing := &domain.User{ID: 1, Name: "Alice", Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "unsub-tok", ConfirmedAt: &now}
+		users := newFakeUserRepo(existing)
+		svc := newSubscriptionSvc(newFakeListRepo(list), users, newFakeConfirmationRepo(), newFakeTopicRepo(), &fakeRenderer{}, &fakeSender{})
+
+		_, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com", nil)
+		if !errors.Is(err, domain.ErrUserAlreadyConfirmed) {
+			t.Errorf("expected ErrUserAlreadyConfirmed, got: %v", err)
+		}
+	})
+
+	t.Run("reactivates unsubscribed user and sends new confirmation", func(t *testing.T) {
+		deleted := &domain.User{ID: 5, Name: "Alice", Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "old-unsub"}
+		users := newFakeUserRepo()
+		users.seedDeleted(deleted)
+		confs := newFakeConfirmationRepo()
+		sender := &fakeSender{}
+		metadata := domain.MailMetadata{Subject: "Confirm"}
+		svc := newSubscriptionSvc(newFakeListRepo(list), users, confs, newFakeTopicRepo(), &fakeRenderer{metadata: metadata, body: "click"}, sender)
+
+		user, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if user.ID != deleted.ID {
+			t.Errorf("expected reactivated user ID=%d, got ID=%d", deleted.ID, user.ID)
+		}
+		if _, stillDeleted := users.deletedUsers[deleted.ID]; stillDeleted {
+			t.Error("expected user to be moved out of deleted users")
+		}
+		if _, active := users.users[deleted.ID]; !active {
+			t.Error("expected user to be in active users")
+		}
+		if user.UnsubscribeToken == "old-unsub" {
+			t.Error("expected unsubscribe token to be refreshed")
+		}
+		if len(sender.calls) != 1 {
+			t.Errorf("expected 1 send call, got %d", len(sender.calls))
+		}
+	})
+
+	t.Run("returns error when resend confirmation DeleteConfirmationsByUserID fails", func(t *testing.T) {
+		existing := &domain.User{ID: 1, Name: "Alice", Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "unsub-tok"}
+		users := newFakeUserRepo(existing)
+		confs := newFakeConfirmationRepo()
+		deleteErr := errors.New("db delete failed")
+		confs.deleteByUserIDErr = deleteErr
+		svc := newSubscriptionSvc(newFakeListRepo(list), users, confs, newFakeTopicRepo(), &fakeRenderer{}, &fakeSender{})
+
+		_, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com", nil)
+		if !errors.Is(err, deleteErr) {
+			t.Errorf("expected wrapped delete error, got: %v", err)
+		}
+	})
+
+	t.Run("returns error when ReactivateUser fails", func(t *testing.T) {
+		deleted := &domain.User{ID: 5, Name: "Alice", Email: "alice@example.com", MailingListName: "weekly", UnsubscribeToken: "old-unsub"}
+		users := newFakeUserRepo()
+		users.seedDeleted(deleted)
+		reactivateErr := errors.New("reactivate failed")
+		users.reactivateErr = reactivateErr
+		svc := newSubscriptionSvc(newFakeListRepo(list), users, newFakeConfirmationRepo(), newFakeTopicRepo(), &fakeRenderer{}, &fakeSender{})
+
+		_, err := svc.Subscribe(context.Background(), "weekly", "Alice", "alice@example.com", nil)
+		if !errors.Is(err, reactivateErr) {
+			t.Errorf("expected wrapped reactivate error, got: %v", err)
 		}
 	})
 

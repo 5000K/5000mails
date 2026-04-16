@@ -60,11 +60,7 @@ func (f *fakeNewsletterPreviewer) RenderNewsletter(_ context.Context, id uint, t
 }
 
 func newTestHandler(sub *fakeSubscriber) *PublicHandler {
-	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, nil, nil, nil, RedirectPages{}, slog.Default())
-}
-
-func newTestHandlerWithRedirects(sub *fakeSubscriber, redirects RedirectPages) *PublicHandler {
-	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, nil, nil, nil, redirects, slog.Default())
+	return NewPublicHandler(sub, &fakeNewsletterPreviewer{body: "<html/>", err: nil}, nil, nil, nil, MessageStrings{}, slog.Default())
 }
 
 func TestHandleSubscribe(t *testing.T) {
@@ -139,7 +135,23 @@ func TestHandleSubscribe(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 500 on service error", func(t *testing.T) {
+	t.Run("returns 409 when user is already confirmed", func(t *testing.T) {
+		sub := &fakeSubscriber{subscribeErr: domain.ErrUserAlreadyConfirmed}
+		h := newTestHandler(sub)
+
+		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(`{"name":"Alice","email":"alice@example.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("listName", "weekly")
+		w := httptest.NewRecorder()
+
+		h.handleSubscribe(w, req)
+
+		if w.Code != http.StatusConflict {
+			t.Errorf("expected 409, got %d", w.Code)
+		}
+	})
+
+	t.Run("returns 500 on generic service error", func(t *testing.T) {
 		sub := &fakeSubscriber{subscribeErr: errors.New("db down")}
 		h := newTestHandler(sub)
 
@@ -260,143 +272,24 @@ func TestRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("response has application/json content type", func(t *testing.T) {
+	t.Run("falls back to json when no renderer is configured", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/sometoken", nil)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
 		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-			t.Errorf("expected application/json, got %q", ct)
+			t.Errorf("expected application/json fallback, got %q", ct)
 		}
-	})
-
-	t.Run("response body is valid JSON", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/sometoken", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, req)
 		var got map[string]string
 		if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
-			t.Errorf("expected valid JSON response: %v", err)
+			t.Errorf("expected valid JSON fallback response: %v", err)
 		}
 	})
 }
 
-func TestRedirectPages(t *testing.T) {
-	redirects := RedirectPages{
-		SubscribeSuccess:   "https://example.com/subscribe/success",
-		SubscribeError:     "https://example.com/subscribe/error",
-		ConfirmSuccess:     "https://example.com/confirm/success",
-		ConfirmError:       "https://example.com/confirm/error",
-		UnsubscribeSuccess: "https://example.com/unsubscribe/success",
-		UnsubscribeError:   "https://example.com/unsubscribe/error",
-	}
-
-	t.Run("subscribe success redirects", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
-		body := `{"name":"Alice","email":"alice@example.com"}`
-		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("listName", "weekly")
-		w := httptest.NewRecorder()
-		h.handleSubscribe(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.SubscribeSuccess {
-			t.Errorf("expected Location %q, got %q", redirects.SubscribeSuccess, loc)
-		}
-	})
-
-	t.Run("subscribe error redirects on bad request", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
-		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(`{"name":"Alice"}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("listName", "weekly")
-		w := httptest.NewRecorder()
-		h.handleSubscribe(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.SubscribeError {
-			t.Errorf("expected Location %q, got %q", redirects.SubscribeError, loc)
-		}
-	})
-
-	t.Run("subscribe error redirects on service error", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{subscribeErr: errors.New("db down")}, redirects)
-		body := `{"name":"Alice","email":"alice@example.com"}`
-		req := httptest.NewRequest(http.MethodPost, "/weekly/subscribe", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("listName", "weekly")
-		w := httptest.NewRecorder()
-		h.handleSubscribe(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.SubscribeError {
-			t.Errorf("expected Location %q, got %q", redirects.SubscribeError, loc)
-		}
-	})
-
-	t.Run("confirm success redirects", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
-		req := httptest.NewRequest(http.MethodGet, "/confirm/abc123", nil)
-		req.SetPathValue("token", "abc123")
-		w := httptest.NewRecorder()
-		h.handleConfirm(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.ConfirmSuccess {
-			t.Errorf("expected Location %q, got %q", redirects.ConfirmSuccess, loc)
-		}
-	})
-
-	t.Run("confirm error redirects", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{confirmeErr: errors.New("bad token")}, redirects)
-		req := httptest.NewRequest(http.MethodGet, "/confirm/bad", nil)
-		req.SetPathValue("token", "bad")
-		w := httptest.NewRecorder()
-		h.handleConfirm(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.ConfirmError {
-			t.Errorf("expected Location %q, got %q", redirects.ConfirmError, loc)
-		}
-	})
-
-	t.Run("unsubscribe success redirects", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{}, redirects)
-		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/tok123", nil)
-		req.SetPathValue("token", "tok123")
-		w := httptest.NewRecorder()
-		h.handleUnsubscribe(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.UnsubscribeSuccess {
-			t.Errorf("expected Location %q, got %q", redirects.UnsubscribeSuccess, loc)
-		}
-	})
-
-	t.Run("unsubscribe error redirects", func(t *testing.T) {
-		h := newTestHandlerWithRedirects(&fakeSubscriber{unsubscribeErr: errors.New("bad token")}, redirects)
-		req := httptest.NewRequest(http.MethodGet, "/unsubscribe/bad", nil)
-		req.SetPathValue("token", "bad")
-		w := httptest.NewRecorder()
-		h.handleUnsubscribe(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Errorf("expected 303, got %d", w.Code)
-		}
-		if loc := w.Header().Get("Location"); loc != redirects.UnsubscribeError {
-			t.Errorf("expected Location %q, got %q", redirects.UnsubscribeError, loc)
-		}
-	})
-}
 func TestHandleNewsletterPreview(t *testing.T) {
 	t.Run("returns rendered HTML for valid id without token", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<html><body>Hello</body></html>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, MessageStrings{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/42", nil)
 		req.SetPathValue("id", "42")
 		w := httptest.NewRecorder()
@@ -421,7 +314,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("passes token to previewer when provided", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<html/>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, MessageStrings{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/7?token=abc123", nil)
 		req.SetPathValue("id", "7")
 		w := httptest.NewRecorder()
@@ -436,7 +329,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 	})
 
 	t.Run("returns 400 on non-numeric id", func(t *testing.T) {
-		h := NewPublicHandler(&fakeSubscriber{}, &fakeNewsletterPreviewer{}, nil, nil, nil, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, &fakeNewsletterPreviewer{}, nil, nil, nil, MessageStrings{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/abc", nil)
 		req.SetPathValue("id", "abc")
 		w := httptest.NewRecorder()
@@ -449,7 +342,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("returns 404 when newsletter not found regardless of token", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{err: errors.New("not found")}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, MessageStrings{}, slog.Default())
 
 		for _, token := range []string{"", "some-token"} {
 			req := httptest.NewRequest(http.MethodGet, "/mail/99?token="+token, nil)
@@ -465,7 +358,7 @@ func TestHandleNewsletterPreview(t *testing.T) {
 
 	t.Run("preview is routed via Routes()", func(t *testing.T) {
 		previewer := &fakeNewsletterPreviewer{body: "<p>hi</p>"}
-		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, RedirectPages{}, slog.Default())
+		h := NewPublicHandler(&fakeSubscriber{}, previewer, nil, nil, nil, MessageStrings{}, slog.Default())
 		req := httptest.NewRequest(http.MethodGet, "/mail/1", nil)
 		w := httptest.NewRecorder()
 		h.Routes().ServeHTTP(w, req)

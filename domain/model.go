@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrUserAlreadyConfirmed = errors.New("user already confirmed")
 
 type MailingList struct {
 	Name string

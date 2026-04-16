@@ -13,16 +13,20 @@ type MailingListRepository interface {
 type UserRepository interface {
 	AddUser(ctx context.Context, mailingListName string, name, email, unsubscribeToken string) (*User, error)
 	ConfirmUser(ctx context.Context, userID uint) error
+	GetUserByEmail(ctx context.Context, mailingListName, email string) (*User, error)
+	GetUnsubscribedUserByEmail(ctx context.Context, mailingListName, email string) (*User, error)
 	GetUserByUnsubscribeToken(ctx context.Context, token string) (*User, error)
 	GetUsers(ctx context.Context, mailingListName string) ([]User, error)
 	GetConfirmedUsers(ctx context.Context, mailingListName string) ([]User, error)
 	RemoveUser(ctx context.Context, userID uint) error
+	ReactivateUser(ctx context.Context, userID uint, name, unsubscribeToken string) (*User, error)
 }
 
 type ConfirmationRepository interface {
 	CreateConfirmation(ctx context.Context, userID uint, token string) (*Confirmation, error)
 	GetConfirmationByToken(ctx context.Context, token string) (*Confirmation, error)
 	DeleteConfirmation(ctx context.Context, id uint) error
+	DeleteConfirmationsByUserID(ctx context.Context, userID uint) error
 }
 
 type TopicRepository interface {

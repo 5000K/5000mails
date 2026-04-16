@@ -72,13 +72,18 @@ func main() {
 	schedulingSvc := service.NewSchedulingService(repo, mailSvc, 30*time.Second, logger)
 	schedulingSvc.Start()
 
-	publicHandler := api.NewPublicHandler(subscriptionSvc, mailSvc, topicSvc, repo, rndr, api.RedirectPages{
-		SubscribeSuccess:   cfg.Redirects.SubscribeSuccess,
-		SubscribeError:     cfg.Redirects.SubscribeError,
-		ConfirmSuccess:     cfg.Redirects.ConfirmSuccess,
-		ConfirmError:       cfg.Redirects.ConfirmError,
-		UnsubscribeSuccess: cfg.Redirects.UnsubscribeSuccess,
-		UnsubscribeError:   cfg.Redirects.UnsubscribeError,
+	publicHandler := api.NewPublicHandler(subscriptionSvc, mailSvc, topicSvc, repo, rndr, api.MessageStrings{
+		SubscribeSuccess:                cfg.Strings.SubscribeSuccess,
+		SubscribeErrorInvalidInput:      cfg.Strings.SubscribeErrorInvalidInput,
+		SubscribeErrorAlreadySubscribed: cfg.Strings.SubscribeErrorAlreadySubscribed,
+		SubscribeError:                  cfg.Strings.SubscribeError,
+		ConfirmSuccess:                  cfg.Strings.ConfirmSuccess,
+		ConfirmErrorInvalidToken:        cfg.Strings.ConfirmErrorInvalidToken,
+		UnsubscribeSuccess:              cfg.Strings.UnsubscribeSuccess,
+		UnsubscribeErrorInvalidToken:    cfg.Strings.UnsubscribeErrorInvalidToken,
+		NewsletterNotFound:              cfg.Strings.NewsletterNotFound,
+		PreferencesErrorInvalidToken:    cfg.Strings.PreferencesErrorInvalidToken,
+		PreferencesError:                cfg.Strings.PreferencesError,
 	}, logger)
 
 	var publicKey ed25519.PublicKey

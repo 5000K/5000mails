@@ -49,27 +49,35 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 		return nil, fmt.Errorf("mailing list %q not found: %w", listName, err)
 	}
 
-	unsubToken, err := generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("generating unsubscribe token: %w", err)
+	if activeUser, err := s.users.GetUserByEmail(ctx, list.Name, email); err == nil {
+		if activeUser.IsConfirmed() {
+			return nil, fmt.Errorf("subscribing %q to %q: %w", email, listName, domain.ErrUserAlreadyConfirmed)
+		}
+		if err := s.resendConfirmation(ctx, activeUser, listName); err != nil {
+			return nil, err
+		}
+		return activeUser, nil
 	}
 
-	user, err := s.users.AddUser(ctx, list.Name, userName, email, unsubToken)
-	if err != nil {
-		return nil, fmt.Errorf("adding user to list %q: %w", listName, err)
+	if deletedUser, err := s.users.GetUnsubscribedUserByEmail(ctx, list.Name, email); err == nil {
+		return s.reactivateAndConfirm(ctx, deletedUser, list.Name, userName, topicNames)
 	}
 
-	if err := s.subscribeToTopics(ctx, user.ID, list.Name, topicNames); err != nil {
-		return nil, fmt.Errorf("subscribing user to topics: %w", err)
+	return s.createAndConfirm(ctx, list.Name, userName, email, topicNames)
+}
+
+func (s *SubscriptionService) resendConfirmation(ctx context.Context, user *domain.User, listName string) error {
+	if err := s.confirmations.DeleteConfirmationsByUserID(ctx, user.ID); err != nil {
+		return fmt.Errorf("clearing old confirmations for user %d: %w", user.ID, err)
 	}
 
 	token, err := generateToken()
 	if err != nil {
-		return nil, fmt.Errorf("generating confirmation token: %w", err)
+		return fmt.Errorf("generating confirmation token: %w", err)
 	}
 
 	if _, err := s.confirmations.CreateConfirmation(ctx, user.ID, token); err != nil {
-		return nil, fmt.Errorf("creating confirmation for user %d: %w", user.ID, err)
+		return fmt.Errorf("creating confirmation for user %d: %w", user.ID, err)
 	}
 
 	metadata, body, err := s.renderer.Render(&s.confirmMail, map[string]any{
@@ -79,11 +87,55 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, listName, userName,
 		"Recipient":      *user,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("rendering confirmation mail: %w", err)
+		return fmt.Errorf("rendering confirmation mail: %w", err)
 	}
 
 	if err := s.sender.SendMail(ctx, metadata, body, *user); err != nil {
-		return nil, fmt.Errorf("sending confirmation mail to %q: %w", email, err)
+		return fmt.Errorf("sending confirmation mail to %q: %w", user.Email, err)
+	}
+
+	return nil
+}
+
+func (s *SubscriptionService) reactivateAndConfirm(ctx context.Context, deletedUser *domain.User, listName, userName string, topicNames []string) (*domain.User, error) {
+	unsubToken, err := generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("generating unsubscribe token: %w", err)
+	}
+
+	user, err := s.users.ReactivateUser(ctx, deletedUser.ID, userName, unsubToken)
+	if err != nil {
+		return nil, fmt.Errorf("reactivating user %d: %w", deletedUser.ID, err)
+	}
+
+	if err := s.subscribeToTopics(ctx, user.ID, listName, topicNames); err != nil {
+		return nil, fmt.Errorf("subscribing user to topics: %w", err)
+	}
+
+	if err := s.resendConfirmation(ctx, user, listName); err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (s *SubscriptionService) createAndConfirm(ctx context.Context, listName, userName, email string, topicNames []string) (*domain.User, error) {
+	unsubToken, err := generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("generating unsubscribe token: %w", err)
+	}
+
+	user, err := s.users.AddUser(ctx, listName, userName, email, unsubToken)
+	if err != nil {
+		return nil, fmt.Errorf("adding user to list %q: %w", listName, err)
+	}
+
+	if err := s.subscribeToTopics(ctx, user.ID, listName, topicNames); err != nil {
+		return nil, fmt.Errorf("subscribing user to topics: %w", err)
+	}
+
+	if err := s.resendConfirmation(ctx, user, listName); err != nil {
+		return nil, err
 	}
 
 	return user, nil

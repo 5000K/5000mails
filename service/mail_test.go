@@ -182,6 +182,22 @@ func TestMailService_SendToList(t *testing.T) {
 		}
 	})
 
+	t.Run("injects previewURL with unsubscribe token into render data per recipient", func(t *testing.T) {
+		user := confirmedUser(1, "weekly", "alice@example.com")
+		user.UnsubscribeToken = "unsub-tok"
+		renderer := &fakeRenderer{metadata: metadata, body: "body"}
+		newsletterRepo := newFakeNewsletterRepo()
+		svc := NewMailService(newFakeListRepo(list), newFakeUserRepo(user), newFakeTopicRepo(), newsletterRepo, renderer, &fakeSender{}, "https://example.com")
+
+		if err := svc.SendToList(context.Background(), "weekly", "raw", nil, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		wantURL := "https://example.com/mail/1?token=unsub-tok"
+		if got, _ := renderer.lastData["previewURL"].(string); got != wantURL {
+			t.Errorf("previewURL = %q, want %q", got, wantURL)
+		}
+	})
+
 	t.Run("wraps newsletter archive error", func(t *testing.T) {
 		archiveErr := errors.New("archive failed")
 		newsletterRepo := newFakeNewsletterRepo()
